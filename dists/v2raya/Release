@@ -1,0 +1,20 @@
+Origin: mzz2017
+Label: v2raya
+Suite: stable
+Codename: v2raya
+Date: Wed, 29 Jan 2020 09:23:26 UTC
+Architectures: amd64
+Components: main
+Description: https://github.com/mzz2017/v2raya
+MD5Sum:
+ 5d2b7cabbf7f9b722230a5f813d611d5 560 main/binary-amd64/Packages
+ 3c38c3c278f29c15f7b40f5310f6e96c 385 main/binary-amd64/Packages.gz
+ 2b25a3cfcd41f48bb57bc7a02af6290c 129 main/binary-amd64/Release
+SHA1:
+ b93e218c3769f0d1b58423425365da75573a7afe 560 main/binary-amd64/Packages
+ 9e81206051b857ec467b53b335ce873df0afd055 385 main/binary-amd64/Packages.gz
+ 1a3c3151d34938adaddf3c2ca908cc149b92f0b4 129 main/binary-amd64/Release
+SHA256:
+ 74156528afbd4a05658c7eb3db2117a84a120fbc8311f7da304cee631f61a784 560 main/binary-amd64/Packages
+ 349db7f4e1b09494d8bfd164b3200f42cf9059ddbf8dc4f7b301f19875499fae 385 main/binary-amd64/Packages.gz
+ 81f34212cd3d21b01575b3781a7c0208fa01b571cc0647b475caa2b6268906a8 129 main/binary-amd64/Release
