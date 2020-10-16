@@ -1,11 +1,21 @@
 package global
 
-import "V2RayA/model/shadowsocksr"
+import (
+	"os"
+	"github.com/v2rayA/v2rayA/plugin"
+)
 
 var Version = "debug"
 var FoundNew = false
 var RemoteVersion = ""
+var SupportTproxy = true
 
-var ServiceControlMode SystemServiceControlMode = GetServiceControlMode()
+var ServiceControlMode SystemServiceControlMode
 
-var SSRs shadowsocksr.SSRs
+var Plugins plugin.Plugins
+
+var V2RayPID *os.Process
+
+func IsDebug() bool {
+	return Version == "debug"
+}

@@ -1,7 +1,9 @@
 <template>
   <div class="modal-card" style="max-width: 520px;margin:auto">
     <header class="modal-card-head">
-      <p class="modal-card-title">节点配置</p>
+      <p class="modal-card-title">
+        {{ $tc("configureServer.title", readonly ? 2 : 1) }}
+      </p>
     </header>
     <section :class="{ 'modal-card-body': true, readonly: readonly }">
       <b-tabs
@@ -10,19 +12,29 @@
         class="block"
         type="is-boxed is-twitter same-width-5"
       >
-        <b-tab-item label="VMESS">
+        <b-tab-item label="V2RAY">
+          <b-field
+            v-show="showVLess"
+            label="Protocol"
+            label-position="on-border"
+          >
+            <b-select v-model="v2ray.protocol" expanded>
+              <option value="vmess">VMESS</option>
+              <option value="vless">VLESS</option>
+            </b-select>
+          </b-field>
           <b-field label="Name" label-position="on-border">
             <b-input
-              ref="vmess_name"
-              v-model="vmess.ps"
-              placeholder="节点名称"
+              ref="v2ray_name"
+              v-model="v2ray.ps"
+              :placeholder="$t('configureServer.servername')"
               expanded
             />
           </b-field>
           <b-field label="Address" label-position="on-border">
             <b-input
-              ref="vmess_add"
-              v-model="vmess.add"
+              ref="v2ray_add"
+              v-model="v2ray.add"
               required
               placeholder="IP / HOST"
               expanded
@@ -30,48 +42,68 @@
           </b-field>
           <b-field label="Port" label-position="on-border">
             <b-input
-              ref="vmess_port"
-              v-model="vmess.port"
+              ref="v2ray_port"
+              v-model="v2ray.port"
               required
-              placeholder="端口号"
+              :placeholder="$t('configureServer.port')"
               type="number"
               expanded
             />
           </b-field>
           <b-field label="ID" label-position="on-border">
             <b-input
-              ref="vmess_id"
-              v-model="vmess.id"
+              ref="v2ray_id"
+              v-model="v2ray.id"
               required
               placeholder="UserID"
               expanded
             />
           </b-field>
-          <b-field label="AID" label-position="on-border">
+          <b-field
+            v-show="v2ray.protocol !== 'vless'"
+            label="AlterID"
+            label-position="on-border"
+          >
             <b-input
-              ref="vmess_aid"
-              v-model="vmess.aid"
+              ref="v2ray_aid"
+              v-model="v2ray.aid"
               placeholder="AlterID"
               type="number"
               min="0"
               max="65535"
+              required
               expanded
             />
           </b-field>
           <b-field
-            v-show="vmess.type !== 'dtls'"
+            v-show="v2ray.type !== 'dtls'"
             label="TLS"
             label-position="on-border"
           >
-            <b-select v-model="vmess.tls" expanded @input="handleNetworkChange">
-              <option value="none">关闭</option>
-              <option value="tls">开启</option>
+            <b-select v-model="v2ray.tls" expanded @input="handleNetworkChange">
+              <option value="none">{{ $t("setting.options.off") }}</option>
+              <option value="tls">{{ $t("setting.options.on") }}</option>
+            </b-select>
+          </b-field>
+          <b-field
+            v-show="v2ray.tls === 'tls'"
+            label="AllowInsecure"
+            label-position="on-border"
+          >
+            <b-select
+              ref="v2ray_allow_insecure"
+              v-model="v2ray.allowInsecure"
+              expanded
+              required
+            >
+              <option :value="false">{{ $t("operations.no") }}</option>
+              <option :value="true">{{ $t("operations.yes") }}</option>
             </b-select>
           </b-field>
           <b-field label="Network" label-position="on-border">
             <b-select
-              ref="vmess_net"
-              v-model="vmess.net"
+              ref="v2ray_net"
+              v-model="v2ray.net"
               expanded
               required
               @input="handleNetworkChange"
@@ -83,46 +115,72 @@
             </b-select>
           </b-field>
           <b-field
-            v-show="vmess.net === 'tcp'"
+            v-show="v2ray.net === 'tcp'"
             label="Type"
             label-position="on-border"
           >
-            <b-select v-model="vmess.type" expanded>
-              <option value="none">不伪装</option>
-              <option value="http">伪装http</option>
+            <b-select v-model="v2ray.type" expanded>
+              <option value="none"
+                >{{ $t("configureServer.noObfuscation") }}
+              </option>
+              <option value="http"
+                >{{ $t("configureServer.httpObfuscation") }}
+              </option>
             </b-select>
           </b-field>
           <b-field
-            v-show="vmess.net === 'kcp'"
+            v-show="v2ray.net === 'kcp'"
             label="Type"
             label-position="on-border"
           >
-            <b-select v-model="vmess.type" expanded>
-              <option value="none">不伪装</option>
-              <option value="srtp">伪装视频通话(srtp)</option>
-              <option value="utp">伪装BT下载(uTP)</option>
-              <option value="wechat-video">伪装微信视频通话</option>
-              <option value="dtls">伪装DTLS1.2数据包(将强制开启TLS)</option>
-              <option value="wireguard">伪装WireGuard数据包</option>
+            <b-select v-model="v2ray.type" expanded>
+              <option value="none"
+                >{{ $t("configureServer.noObfuscation") }}
+              </option>
+              <option value="srtp"
+                >{{ $t("configureServer.srtpObfuscation") }}
+              </option>
+              <option value="utp"
+                >{{ $t("configureServer.utpObfuscation") }}
+              </option>
+              <option value="wechat-video"
+                >{{ $t("configureServer.wechatVideoObfuscation") }}
+              </option>
+              <option value="dtls"
+                >{{
+                  `${$t("configureServer.dtlsObfuscation")}(${$t(
+                    "configureServer.forceTLS"
+                  )})`
+                }}
+              </option>
+              <option value="wireguard"
+                >{{ $t("configureServer.wireguardObfuscation") }}
+              </option>
             </b-select>
           </b-field>
           <b-field
-            v-show="vmess.net === 'ws' || vmess.net === 'h2'"
+            v-show="
+              v2ray.net === 'ws' || v2ray.net === 'h2' || v2ray.tls === 'tls'
+            "
             label="Host"
             label-position="on-border"
           >
             <b-input
-              v-model="vmess.host"
-              placeholder="伪装域名(host)"
+              v-model="v2ray.host"
+              :placeholder="$t('configureServer.hostObfuscation')"
               expanded
             />
           </b-field>
           <b-field
-            v-show="vmess.net === 'ws' || vmess.net === 'h2'"
+            v-show="v2ray.net === 'ws' || v2ray.net === 'h2'"
             label="Path"
             label-position="on-border"
           >
-            <b-input v-model="vmess.path" placeholder="路径(path)" expanded />
+            <b-input
+              v-model="v2ray.path"
+              :placeholder="$t('configureServer.pathObfuscation')"
+              expanded
+            />
           </b-field>
         </b-tab-item>
         <b-tab-item label="SS">
@@ -130,7 +188,7 @@
             <b-input
               ref="ss_name"
               v-model="ss.name"
-              placeholder="节点名称"
+              :placeholder="$t('configureServer.servername')"
               expanded
             />
           </b-field>
@@ -148,7 +206,7 @@
               ref="ss_port"
               v-model="ss.port"
               required
-              placeholder="端口号"
+              :placeholder="$t('configureServer.port')"
               type="number"
               expanded
             />
@@ -158,7 +216,7 @@
               ref="ss_password"
               v-model="ss.password"
               required
-              placeholder="密码"
+              :placeholder="$t('configureServer.password')"
               expanded
             />
           </b-field>
@@ -179,9 +237,6 @@
               <option value="rc4-md5">rc4-md5</option>
               <option value="chacha20">chacha20</option>
               <option value="chacha20-ietf">chacha20-ietf</option>
-              <option value="xchacha20-ietf-poly1305"
-                >xchacha20-ietf-poly1305</option
-              >
               <option value="salsa20">salsa20</option>
               <option value="camellia-128-cfb">camellia-128-cfb</option>
               <option value="camellia-192-cfb">camellia-192-cfb</option>
@@ -197,7 +252,7 @@
             <b-input
               ref="ssr_name"
               v-model="ssr.name"
-              placeholder="节点名称"
+              :placeholder="$t('configureServer.servername')"
               expanded
             />
           </b-field>
@@ -215,7 +270,7 @@
               ref="ssr_port"
               v-model="ssr.port"
               required
-              placeholder="端口号"
+              :placeholder="$t('configureServer.port')"
               type="number"
               expanded
             />
@@ -225,7 +280,7 @@
               ref="ssr_password"
               v-model="ssr.password"
               required
-              placeholder="密码"
+              :placeholder="$t('configureServer.password')"
               expanded
             />
           </b-field>
@@ -253,6 +308,7 @@
               <option value="idea-cfb">idea-cfb</option>
               <option value="rc2-cfb">rc2-cfb</option>
               <option value="seed-cfb">seed-cfb</option>
+              <option value="none">none</option>
             </b-select>
           </b-field>
           <b-field label="Protocol" label-position="on-border">
@@ -262,6 +318,8 @@
               <option value="auth_sha1_v4">auth_sha1_v4</option>
               <option value="auth_aes128_md5">auth_aes128_md5</option>
               <option value="auth_aes128_sha1">auth_aes128_sha1</option>
+              <option value="auth_chain_a">auth_chain_a</option>
+              <option value="auth_chain_b">auth_chain_b</option>
             </b-select>
           </b-field>
           <b-field
@@ -298,14 +356,99 @@
             />
           </b-field>
         </b-tab-item>
+        <b-tab-item label="PingTunnel">
+          <b-field label="Name" label-position="on-border">
+            <b-input
+              ref="pingtunnel_name"
+              v-model="pingtunnel.name"
+              :placeholder="$t('configureServer.servername')"
+              expanded
+            />
+          </b-field>
+          <b-field label="Address" label-position="on-border">
+            <b-input
+              ref="pingtunnel_server"
+              v-model="pingtunnel.server"
+              required
+              placeholder="IP / HOST"
+              expanded
+            />
+          </b-field>
+          <b-field label="Password" label-position="on-border">
+            <b-input
+              ref="pingtunnel_password"
+              v-model="pingtunnel.password"
+              required
+              :placeholder="$t('configureServer.password')"
+              type="number"
+              expanded
+            />
+          </b-field>
+        </b-tab-item>
+        <b-tab-item label="Trojan">
+          <b-field label="Name" label-position="on-border">
+            <b-input
+              ref="trojan_name"
+              v-model="trojan.name"
+              :placeholder="$t('configureServer.servername')"
+              expanded
+            />
+          </b-field>
+          <b-field label="Address" label-position="on-border">
+            <b-input
+              ref="trojan_server"
+              v-model="trojan.server"
+              required
+              placeholder="IP / HOST"
+              expanded
+            />
+          </b-field>
+          <b-field label="Port" label-position="on-border">
+            <b-input
+              ref="trojan_port"
+              v-model="trojan.port"
+              required
+              :placeholder="$t('configureServer.port')"
+              type="number"
+              expanded
+            />
+          </b-field>
+          <b-field label="Password" label-position="on-border">
+            <b-input
+              ref="trojan_password"
+              v-model="trojan.password"
+              required
+              :placeholder="$t('configureServer.password')"
+              expanded
+            />
+          </b-field>
+          <b-field label="Peer" label-position="on-border">
+            <b-input
+              v-model="trojan.peer"
+              :placeholder="`Peer(${$t('common.optional')})`"
+              expanded
+            />
+          </b-field>
+          <b-field label="AllowInsecure" label-position="on-border">
+            <b-select
+              ref="trojan_allow_insecure"
+              v-model="trojan.allowInsecure"
+              expanded
+              required
+            >
+              <option :value="false">{{ $t("operations.no") }}</option>
+              <option :value="true">{{ $t("operations.yes") }}</option>
+            </b-select>
+          </b-field>
+        </b-tab-item>
       </b-tabs>
     </section>
     <footer v-if="!readonly" class="modal-card-foot flex-end">
       <button class="button" type="button" @click="$parent.close()">
-        取消
+        {{ $t("operations.cancel") }}
       </button>
       <button class="button is-primary" @click="handleClickSubmit">
-        保存
+        {{ $t("operations.saveApply") }}
       </button>
     </footer>
   </div>
@@ -314,6 +457,7 @@
 <script>
 import { handleResponse } from "@/assets/js/utils";
 import { Base64 } from "js-base64";
+import { parseURL, generateURL } from "../assets/js/utils";
 
 export default {
   name: "ModalServer",
@@ -330,18 +474,20 @@ export default {
     }
   },
   data: () => ({
-    vmess: {
+    showVLess: false,
+    v2ray: {
       ps: "",
       add: "",
       port: "",
       id: "",
-      aid: "0",
+      aid: "",
       net: "tcp",
       type: "none",
       host: "",
       path: "",
       tls: "none",
       v: "",
+      allowInsecure: false,
       protocol: "vmess"
     },
     ss: {
@@ -364,9 +510,25 @@ export default {
       obfsParam: "",
       protocol: "ssr"
     },
+    pingtunnel: {
+      name: "",
+      server: "",
+      password: "",
+      protocol: "pingtunnel"
+    },
+    trojan: {
+      name: "",
+      server: "",
+      peer: "",
+      allowInsecure: false,
+      port: "",
+      password: "",
+      protocol: "trojan"
+    },
     tabChoice: 0
   }),
   mounted() {
+    this.showVLess = localStorage["vlessValid"] === "true";
     if (this.which !== null) {
       this.$axios({
         url: apiRoot + "/sharingAddress",
@@ -379,7 +541,7 @@ export default {
           if (
             res.data.data.sharingAddress.toLowerCase().startsWith("vmess://")
           ) {
-            this.vmess = this.resolveURL(res.data.data.sharingAddress);
+            this.v2ray = this.resolveURL(res.data.data.sharingAddress);
             this.tabChoice = 0;
           } else if (
             res.data.data.sharingAddress.toLowerCase().startsWith("ss://")
@@ -391,6 +553,18 @@ export default {
           ) {
             this.ssr = this.resolveURL(res.data.data.sharingAddress);
             this.tabChoice = 2;
+          } else if (
+            res.data.data.sharingAddress
+              .toLowerCase()
+              .startsWith("pingtunnel://")
+          ) {
+            this.pingtunnel = this.resolveURL(res.data.data.sharingAddress);
+            this.tabChoice = 3;
+          } else if (
+            res.data.data.sharingAddress.toLowerCase().startsWith("trojan://")
+          ) {
+            this.trojan = this.resolveURL(res.data.data.sharingAddress);
+            this.tabChoice = 4;
           }
         });
       });
@@ -402,10 +576,11 @@ export default {
         let obj = JSON.parse(
           Base64.decode(url.substring(url.indexOf("://") + 3))
         );
-        obj.ps = unescape(obj.ps);
+        console.log(obj);
+        obj.ps = decodeURIComponent(obj.ps);
         obj.tls = obj.tls || "none";
         obj.type = obj.type || "none";
-        obj.protocol = "vmess";
+        obj.protocol = obj.protocol || "vmess";
         return obj;
       } else if (url.toLowerCase().indexOf("ss://") >= 0) {
         const regexp = /ss:\/\/(.+)@(.+):(.+)#(.*)/;
@@ -449,12 +624,39 @@ export default {
           obfsParam: m["obfsparam"],
           protocol: "ssr"
         };
+      } else if (url.toLowerCase().indexOf("pingtunnel://") >= 0) {
+        let u = url.substr(13);
+        u = Base64.decode(u);
+        const regexp = /(.+):(.+)#(.*)/;
+        let arr = regexp.exec(u);
+        return {
+          server: arr[1],
+          password: Base64.decode(arr[2]),
+          name: decodeURIComponent(arr[3]),
+          protocol: "pingtunnel"
+        };
+      } else if (url.toLowerCase().indexOf("trojan://") >= 0) {
+        let u = parseURL(url);
+        return {
+          password: u.username,
+          server: u.host,
+          port: u.port,
+          name: u.hash,
+          peer: u.params.peer || "",
+          allowInsecure:
+            u.params.allowInsecure === true || u.params.allowInsecure === "1",
+          protocol: "trojan"
+        };
       }
       return null;
     },
     generateURL(srcObj) {
       let obj = {};
+      let params = {};
       switch (srcObj.protocol) {
+        case "vless":
+        //FIXME: 临时方案
+        // eslint-disable-next-line no-fallthrough
         case "vmess":
           //尽量减少生成的链接长度
           obj = Object.assign({}, srcObj);
@@ -462,7 +664,9 @@ export default {
             case "kcp":
             case "tcp":
               obj.path = "";
-              obj.host = "";
+              if (obj.tls !== "tls") {
+                obj.host = "";
+              }
               break;
             default:
               obj.type = "";
@@ -470,9 +674,12 @@ export default {
           return "vmess://" + Base64.encode(JSON.stringify(obj));
         case "ss":
           /* ss://BASE64(method:password)@server:port#name */
-          return `ss://${Base64.encode(
-            `${srcObj.method}:${srcObj.password}`
-          )}@${srcObj.server}:${srcObj.port}#${srcObj.name}`;
+          return (
+            `ss://${Base64.encode(`${srcObj.method}:${srcObj.password}`)}@${
+              srcObj.server
+            }:${srcObj.port}` +
+            (srcObj.name.length ? `#${Base64.encodeURI(srcObj.name)}` : "")
+          );
         case "ssr":
           /* ssr://server:port:proto:method:obfs:URLBASE64(password)/?remarks=URLBASE64(remarks)&protoparam=URLBASE64(protoparam)&obfsparam=URLBASE64(obfsparam)) */
           return `ssr://${Base64.encode(
@@ -484,11 +691,30 @@ export default {
               srcObj.protoParam
             )}&obfsparam=${Base64.encodeURI(srcObj.obfsParam)}`
           )}`;
+        case "pingtunnel":
+          return `pingtunnel://${Base64.encode(
+            `${srcObj.server}:${Base64.encodeURI(srcObj.password)}` +
+              (srcObj.name.length ? `#${encodeURIComponent(srcObj.name)}` : "")
+          )}`;
+        case "trojan":
+          /* trojan://password@server:port?allowInsecure=1&peer=peer#URIESCAPE(name) */
+          params = { allowInsecure: srcObj.allowInsecure };
+          if (srcObj.peer !== "") {
+            params.peer = srcObj.peer;
+          }
+          return generateURL({
+            protocol: "trojan",
+            username: srcObj.password,
+            host: srcObj.server,
+            port: srcObj.port,
+            hash: srcObj.name,
+            params
+          });
       }
       return null;
     },
     handleNetworkChange() {
-      this.vmess.type = "none";
+      this.v2ray.type = "none";
     },
     handleClickSubmit() {
       let valid = true;
@@ -496,13 +722,19 @@ export default {
         if (!this.$refs.hasOwnProperty(k)) {
           continue;
         }
-        if (this.tabChoice === 0 && !k.startsWith("vmess_")) {
+        if (this.tabChoice === 0 && !k.startsWith("v2ray_")) {
           continue;
         }
         if (this.tabChoice === 1 && !k.startsWith("ss_")) {
           continue;
         }
         if (this.tabChoice === 2 && !k.startsWith("ssr_")) {
+          continue;
+        }
+        if (this.tabChoice === 3 && !k.startsWith("pingtunnel_")) {
+          continue;
+        }
+        if (this.tabChoice === 4 && !k.startsWith("trojan_")) {
           continue;
         }
         let x = this.$refs[k];
@@ -522,11 +754,15 @@ export default {
       }
       let coded = "";
       if (this.tabChoice === 0) {
-        coded = this.generateURL(this.vmess);
+        coded = this.generateURL(this.v2ray);
       } else if (this.tabChoice === 1) {
         coded = this.generateURL(this.ss);
       } else if (this.tabChoice === 2) {
         coded = this.generateURL(this.ssr);
+      } else if (this.tabChoice === 3) {
+        coded = this.generateURL(this.pingtunnel);
+      } else if (this.tabChoice === 4) {
+        coded = this.generateURL(this.trojan);
       }
       this.$emit("submit", coded);
     }
@@ -538,10 +774,13 @@ export default {
 .is-twitter .is-active a {
   color: #4099ff !important;
 }
+
 .readonly {
   pointer-events: none;
 }
+
 .same-width-5 li {
-  width: 5em;
+  min-width: 5em;
+  width: unset !important;
 }
 </style>

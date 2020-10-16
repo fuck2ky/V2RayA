@@ -1,18 +1,17 @@
 package ssr
 
 import (
-	"errors"
+	shadowsocksr "github.com/mzz2017/shadowsocksR"
+	"github.com/mzz2017/shadowsocksR/ssr"
+	"github.com/mzz2017/shadowsocksR/streamCipher"
 	"net"
 	"net/url"
 	"strconv"
 	"strings"
 
-	shadowsocksr "github.com/mzz2017/shadowsocksR"
 	"github.com/mzz2017/shadowsocksR/obfs"
 	"github.com/mzz2017/shadowsocksR/protocol"
-	"github.com/mzz2017/shadowsocksR/ssr"
-
-	"V2RayA/extra/proxy"
+	"github.com/v2rayA/v2rayA/extra/proxy"
 	"github.com/nadoo/glider/common/socks"
 	"log"
 )
@@ -30,36 +29,6 @@ type SSR struct {
 	Protocol        string
 	ProtocolParam   string
 	ProtocolData    interface{}
-}
-
-type Proxy struct {
-	proxy.Proxy
-	SSR SSR
-}
-
-func NewProxy(s string) (p Proxy, err error) {
-	d, _ := proxy.NewDirect("")
-	ssr, err := NewSSR(s, d)
-	if err != nil {
-		return
-	}
-	return Proxy{SSR: *ssr}, nil
-}
-
-// Dial connects to the given address via the proxy.
-func (p Proxy) Dial(network, addr string) (net.Conn, string, error) {
-	c, err := p.SSR.Dial(network, addr)
-	return c, p.SSR.Addr(), err
-}
-
-// DialUDP connects to the given address via the proxy.
-func (p Proxy) DialUDP(network, addr string) (pc net.PacketConn, writeTo net.Addr, err error) {
-	return p.SSR.DialUDP(network, addr)
-}
-
-func (p Proxy) NextDialer(dstAddr string) proxy.Dialer {
-	n, _ := proxy.NewDirect("")
-	return n
 }
 
 func init() {
@@ -113,10 +82,10 @@ func (s *SSR) Addr() string {
 func (s *SSR) Dial(network, addr string) (net.Conn, error) {
 	target := socks.ParseAddr(addr)
 	if target == nil {
-		return nil, errors.New("[ssr] unable to parse address: " + addr)
+		return nil, newError("[ssr] unable to parse address: " + addr)
 	}
 
-	cipher, err := shadowsocksr.NewStreamCipher(s.EncryptMethod, s.EncryptPassword)
+	cipher, err := streamCipher.NewStreamCipher(s.EncryptMethod, s.EncryptPassword)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +98,7 @@ func (s *SSR) Dial(network, addr string) (net.Conn, error) {
 
 	ssrconn := shadowsocksr.NewSSTCPConn(c, cipher)
 	if ssrconn.Conn == nil || ssrconn.RemoteAddr() == nil {
-		return nil, errors.New("[ssr] nil connection")
+		return nil, newError("[ssr] nil connection")
 	}
 
 	// should initialize obfs/protocol now
@@ -138,10 +107,10 @@ func (s *SSR) Dial(network, addr string) (net.Conn, error) {
 
 	ssrconn.IObfs = obfs.NewObfs(s.Obfs)
 	if ssrconn.IObfs == nil {
-		return nil, errors.New("[ssr] unsupported obfs type: " + s.Obfs)
+		return nil, newError("[ssr] unsupported obfs type: " + s.Obfs)
 	}
 
-	obfsServerInfo := &ssr.ServerInfoForObfs{
+	obfsServerInfo := &ssr.ServerInfo{
 		Host:   rs[0],
 		Port:   uint16(port),
 		TcpMss: 1460,
@@ -151,10 +120,10 @@ func (s *SSR) Dial(network, addr string) (net.Conn, error) {
 
 	ssrconn.IProtocol = protocol.NewProtocol(s.Protocol)
 	if ssrconn.IProtocol == nil {
-		return nil, errors.New("[ssr] unsupported protocol type: " + s.Protocol)
+		return nil, newError("[ssr] unsupported protocol type: " + s.Protocol)
 	}
 
-	protocolServerInfo := &ssr.ServerInfoForObfs{
+	protocolServerInfo := &ssr.ServerInfo{
 		Host:   rs[0],
 		Port:   uint16(port),
 		TcpMss: 1460,
@@ -182,5 +151,5 @@ func (s *SSR) Dial(network, addr string) (net.Conn, error) {
 
 // DialUDP connects to the given address via the proxy.
 func (s *SSR) DialUDP(network, addr string) (net.PacketConn, net.Addr, error) {
-	return nil, nil, errors.New("[ssr] udp not supported now")
+	return nil, nil, newError("[ssr] udp not supported now")
 }

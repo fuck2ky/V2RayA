@@ -1,29 +1,37 @@
 package controller
 
 import (
-	"V2RayA/service"
-	"V2RayA/tools"
-	"errors"
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/service"
 	"github.com/gin-gonic/gin"
-	"log"
+	"sync"
+	"time"
 )
+
+var loginSessions = make(chan interface{}, 1)
 
 func PostLogin(ctx *gin.Context) {
 	var data struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
+	loginSessions <- nil
+	defer func() {
+		time.Sleep(500 * time.Millisecond)
+		<-loginSessions
+	}()
 	err := ctx.ShouldBindJSON(&data)
 	if err != nil {
-		tools.ResponseError(ctx, errors.New("参数有误"))
+		common.ResponseError(ctx, logError(nil, "bad request"))
 		return
 	}
 	jwt, err := service.Login(data.Username, data.Password)
 	if err != nil {
-		tools.ResponseError(ctx, err)
+		common.ResponseError(ctx, logError(err))
 		return
 	}
-	tools.ResponseSuccess(ctx, gin.H{
+	common.ResponseSuccess(ctx, gin.H{
 		"token": jwt,
 	})
 }
@@ -36,43 +44,51 @@ func PutAccount(ctx *gin.Context) {
 	}
 	err := ctx.ShouldBindJSON(&data)
 	if err != nil {
-		tools.ResponseError(ctx, errors.New("参数有误"))
+		common.ResponseError(ctx, logError(nil, "bad request"))
 		return
 	}
-	if !service.ValidPasswordLength(data.Password) {
-		tools.ResponseError(ctx, errors.New("密码长度最短5位，且最长32位"))
+	if ok, err := service.ValidPasswordLength(data.Password); !ok {
+		common.ResponseError(ctx, logError(err))
 		return
 	}
 	username := ctx.GetString("Name")
 	if !service.IsValidAccount(username, data.Password) {
-		tools.ResponseError(ctx, errors.New("密码错误"))
+		common.ResponseError(ctx, logError(nil, "wrong username or password"))
 		return
 	}
-	tools.ResponseSuccess(ctx, nil)
+	//TODO: modify password
+	common.ResponseSuccess(ctx, nil)
 }
 
 /*注册*/
+var muReg sync.Mutex
+
 func PostAccount(ctx *gin.Context) {
 	var data struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
+	muReg.Lock()
+	defer muReg.Unlock()
 	err := ctx.ShouldBindJSON(&data)
 	if err != nil {
-		tools.ResponseError(ctx, errors.New("参数有误"))
+		common.ResponseError(ctx, logError(nil, "bad request"))
 		return
 	}
-	if !service.ValidPasswordLength(data.Password) {
-		log.Println(data)
-		tools.ResponseError(ctx, errors.New("密码长度最短5位，且最长32位"))
+	if ok, err := service.ValidPasswordLength(data.Password); !ok {
+		common.ResponseError(ctx, logError(err))
+		return
+	}
+	if configure.HasAnyAccounts() {
+		common.ResponseError(ctx, logError(nil, "register closed"))
 		return
 	}
 	token, err := service.Register(data.Username, data.Password)
 	if err != nil {
-		tools.ResponseError(ctx, err)
+		common.ResponseError(ctx, logError(err))
 		return
 	}
-	tools.ResponseSuccess(ctx, gin.H{
+	common.ResponseSuccess(ctx, gin.H{
 		"token": token,
 	})
 }

@@ -1,12 +1,11 @@
 package controller
 
 import (
-	"V2RayA/model/touch"
-	"V2RayA/persistence/configure"
-	"V2RayA/service"
-	"V2RayA/tools"
-	"errors"
 	"github.com/gin-gonic/gin"
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/core/touch"
+	"github.com/v2rayA/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/service"
 )
 
 /*修改Remarks*/
@@ -18,12 +17,12 @@ func PatchSubscription(ctx *gin.Context) {
 	s := data.Subscription
 	index := s.ID - 1
 	if err != nil || s.TYPE != configure.SubscriptionType || index < 0 || index >= configure.GetLenSubscriptions() {
-		tools.ResponseError(ctx, errors.New("参数有误"))
+		common.ResponseError(ctx, logError(nil, "bad request"))
 		return
 	}
 	err = service.ModifySubscriptionRemark(s)
 	if err != nil {
-		tools.ResponseError(ctx, err)
+		common.ResponseError(ctx, logError(err))
 		return
 	}
 	GetTouch(ctx)
@@ -35,12 +34,12 @@ func PutSubscription(ctx *gin.Context) {
 	err := ctx.ShouldBindJSON(&data)
 	index := data.ID - 1
 	if err != nil || data.TYPE != configure.SubscriptionType || index < 0 || index >= configure.GetLenSubscriptions() {
-		tools.ResponseError(ctx, errors.New("参数有误"))
+		common.ResponseError(ctx, logError(nil, "bad request: ID exceed range"))
 		return
 	}
 	err = service.UpdateSubscription(index, false)
 	if err != nil {
-		tools.ResponseError(ctx, err)
+		common.ResponseError(ctx, logError(err))
 		return
 	}
 	GetTouch(ctx)

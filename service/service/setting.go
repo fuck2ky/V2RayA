@@ -1,10 +1,10 @@
 package service
 
 import (
-	"V2RayA/model/ipforward"
-	"V2RayA/model/v2ray"
-	"V2RayA/persistence/configure"
-	"errors"
+	"github.com/v2rayA/v2rayA/core/ipforward"
+	"github.com/v2rayA/v2rayA/core/v2ray"
+	"github.com/v2rayA/v2rayA/core/v2ray/asset"
+	"github.com/v2rayA/v2rayA/db/configure"
 )
 
 func GetSetting() *configure.Setting {
@@ -17,18 +17,8 @@ func GetSetting() *configure.Setting {
 }
 
 func UpdateSetting(setting *configure.Setting) (err error) {
-	switch setting.PacMode {
-	case configure.GfwlistMode:
-		if !v2ray.IsH2yExists() {
-			return errors.New("未发现GFWList文件，请更新GFWList后再试")
-		}
-	case configure.CustomMode:
-		if !v2ray.IsCustomExists() {
-			return errors.New("未发现custom.dat文件，功能正在开发")
-		}
-	}
-	if setting.Transparent == configure.TransparentGfwlist && !v2ray.IsH2yExists() {
-		return errors.New("未发现GFWList文件，请更新GFWList后再试")
+	if (setting.Transparent == configure.TransparentGfwlist || setting.PacMode == configure.GfwlistMode) && !asset.IsGFWListExists() {
+		return newError("cannot find GFWList files. update GFWList and try again")
 	}
 	if setting.Transparent != configure.TransparentClose {
 		if setting.IpForward != ipforward.IsIpForwardOn() {
@@ -46,7 +36,7 @@ func UpdateSetting(setting *configure.Setting) (err error) {
 	cs := configure.GetConnectedServer()
 	if cs != nil && v2ray.IsV2RayRunning() {
 		tsr, _ := cs.LocateServer()
-		err = v2ray.UpdateV2RayConfigAndRestart(&tsr.VmessInfo)
+		err = v2ray.UpdateV2RayConfig(&tsr.VmessInfo)
 		if err != nil {
 			return
 		}

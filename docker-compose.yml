@@ -1,28 +1,7 @@
 version: "3"
 services:
-  backend:
+  v2raya:
     privileged: true
     network_mode: host # --network host
-    ports:
-      - 2017:2017
     restart: always
     build: .
-    volumes:
-      - shared-data:/etc/v2ray
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-      
-  v2ray:
-    privileged: true
-    network_mode: host # --network host
-    pid: service:backend
-    restart: always
-    image: "v2ray/official"
-    environment:
-     - V2RAY_LOCATION_ASSET=/etc/v2ray
-    volumes:
-      - shared-data:/etc/v2ray
-    entrypoint: sh -c "cp -rfu /usr/bin/v2ray/* /etc/v2ray/ && v2ray -config=/etc/v2ray/config.json"
-
-volumes:
-  shared-data:

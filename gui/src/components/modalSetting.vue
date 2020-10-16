@@ -1,7 +1,7 @@
 <template>
-  <div class="modal-card" style="max-width: 520px;margin:auto">
+  <div class="modal-card modal-setting" style="max-width: 600px;margin:auto">
     <header class="modal-card-head">
-      <p class="modal-card-title">设置</p>
+      <p class="modal-card-title">{{ $t("common.setting") }}</p>
     </header>
     <section class="modal-card-body rules">
       <b-field
@@ -9,59 +9,42 @@
         horizontal
         custom-class="modal-setting-label"
         style="position: relative"
-        >最新：
+        ><span>{{ $t("common.latest") }}:</span>
         <a
-          href="https://github.com/ToutyRater/V2Ray-SiteDAT/blob/master/geofiles/h2y.dat"
+          href="https://github.com/v2rayA/dist/dist-v2ray-rules-dat/releases"
           target="_blank"
           class="is-link"
           >{{ remoteGFWListVersion }}</a
-        >本地：
+        ><span>{{ $t("common.local") }}:</span>
         <b-tooltip
           v-if="dayjs(localGFWListVersion).isAfter(dayjs(remoteGFWListVersion))"
-          label="该时间是指本地文件最后修改时间，因此可能会领先最新版本"
+          :label="$t('setting.messages.gfwlist')"
           position="is-bottom"
           type="is-danger"
           dashed
           multilined
           animated
         >
-          {{ localGFWListVersion ? localGFWListVersion : "无" }}
+          {{ localGFWListVersion ? localGFWListVersion : $t("none") }}
         </b-tooltip>
         <span v-else>{{
-          localGFWListVersion ? localGFWListVersion : "无"
+          localGFWListVersion ? localGFWListVersion : $t("none")
         }}</span>
         <b-button
           size="is-small"
           type="is-text"
-          style="position: relative;top:-2px;text-decoration:none"
+          style="position: relative;top:-2px;text-decoration:none;font-weight: bold"
           @click="handleClickUpdateGFWList"
-          >更新
-        </b-button>
-      </b-field>
-      <b-field
-        v-if="customPacFileVersion"
-        label="自定义规则"
-        horizontal
-        custom-class="modal-setting-label"
-        >最后更新时间： <span>{{ customPacFileVersion }}</span>
-        <b-button
-          size="is-small"
-          type="is-text"
-          style="position: relative;top:-2px;text-decoration:none"
-          >更新
+          >{{ $t("operations.update") }}
         </b-button>
       </b-field>
       <hr class="dropdown-divider" style="margin: 1.25rem 0 1.25rem" />
-      <b-field
-        v-show="transparentValid"
-        label-position="on-border"
-        class="with-icon-alert"
-      >
+      <b-field label-position="on-border" class="with-icon-alert">
         <template slot="label">
-          全局透明代理
+          {{ $t("setting.transparentProxy") }}
           <b-tooltip
             type="is-dark"
-            label="全局代理开启后，任何TCP、UDP流量均会经过V2Ray，此时PAC端口的配置将被覆盖。另外，如需作为网关使得连接本机的其他主机也享受代理，请勾选“开启IP转发”。注：本机docker不会走代理。"
+            :label="$t('setting.messages.transparentProxy')"
             multilined
             position="is-right"
           >
@@ -73,54 +56,82 @@
           </b-tooltip>
         </template>
         <b-select v-model="transparent" expanded>
-          <option value="close">关闭</option>
-          <option value="proxy">代理模式</option>
-          <option value="whitelist">大陆白名单(Recommend)</option>
-          <option value="gfwlist">GFWList</option>
+          <option value="close">{{ $t("setting.options.off") }}</option>
+          <option value="proxy">{{ $t("setting.options.global") }}</option>
+          <option value="whitelist">{{
+            $t("setting.options.whitelistCn")
+          }}</option>
+          <option value="gfwlist">{{ $t("setting.options.gfwlist") }}</option>
+          <option v-show="showTransparentModeRoutingPac" value="pac">{{
+            $t("setting.options.sameAsPacMode")
+          }}</option>
         </b-select>
         <template v-if="transparent !== 'close'">
           <b-button
             style="border-radius: 0;z-index: 2;"
             @click="handleClickPortWhiteList"
           >
-            端口白名单
+            {{ $t("egressPortWhitelist.title") }}
           </b-button>
           <b-checkbox-button
             v-model="ipforward"
             :native-value="true"
             style="position:relative;left:-1px;"
-            >开启IP转发
+            >{{ $t("setting.ipForwardOn") }}
           </b-checkbox-button>
         </template>
       </b-field>
-      <b-field label="PAC模式" label-position="on-border">
+      <b-field label-position="on-border">
+        <template slot="label">
+          {{ $t("setting.pacMode") }}
+          <b-tooltip
+            type="is-dark"
+            :label="$t('setting.messages.pacMode')"
+            multilined
+            position="is-right"
+          >
+            <b-icon
+              size="is-small"
+              icon=" iconfont icon-help-circle-outline"
+              style="position:relative;top:2px;right:3px;font-weight:normal"
+            />
+          </b-tooltip>
+        </template>
         <b-select v-model="pacMode" expanded style="flex-shrink: 0">
-          <option value="whitelist">大陆白名单(Recommend)</option>
-          <option value="gfwlist">GFWList</option>
-          <option value="custom">自定义PAC（待开发）</option>
+          <option value="whitelist">{{
+            $t("setting.options.whitelistCn")
+          }}</option>
+          <option value="gfwlist">{{ $t("setting.options.gfwlist") }}</option>
+          <option v-show="showTransparentModeRoutingPac" value="custom">{{
+            $t("setting.options.customRouting")
+          }}</option>
+          <option v-show="showRoutingA" value="routingA">RoutingA</option>
         </b-select>
         <template v-if="pacMode === 'custom'">
-          <b-input
-            v-model="customPac.url"
-            placeholder="SiteDAT file URL"
-            custom-class="no-shadow"
-          />
           <b-button
-            v-if="pacMode === 'custom'"
             type="is-primary"
             style="margin-left:0;border-bottom-left-radius: 0;border-top-left-radius: 0;color:rgba(0,0,0,0.75)"
             outlined
             @click="handleClickConfigurePac"
-            >配置
+            >{{ $t("operations.configure") }}
+          </b-button>
+        </template>
+        <template v-if="pacMode === 'routingA'">
+          <b-button
+            type="is-primary"
+            style="margin-left:0;border-bottom-left-radius: 0;border-top-left-radius: 0;color:rgba(0,0,0,0.75)"
+            outlined
+            @click="handleClickConfigureRoutingA"
+            >{{ $t("operations.configure") }}
           </b-button>
         </template>
       </b-field>
       <b-field v-show="showAntipollution" label-position="on-border">
         <template slot="label">
-          防止DNS污染
+          {{ $t("setting.preventDnsSpoofing") }}
           <b-tooltip
             type="is-dark"
-            label="可以有效规避DNS污染，但会降低网页打开速度，请视情况开启。转发DNS查询: 万金油，通过代理服务器转发DNS请求，但对网速影响稍大。DoH(v2ray-core: 4.22.0+): 对网速影响较小，需选择较快的DoH服务提供商。"
+            :label="$t('setting.messages.preventDnsSpoofing')"
             multilined
             position="is-right"
           >
@@ -132,17 +143,50 @@
           </b-tooltip>
         </template>
         <b-select v-model="antipollution" expanded class="left-border">
-          <option value="none">关闭</option>
-          <option value="dnsforward">转发DNS查询</option>
-          <option v-show="showDoh" value="doh">DoH(DNS-over-HTTPS)</option>
+          <option v-if="showAntipollutionClosed" value="closed">{{
+            $t("setting.options.closed")
+          }}</option>
+          <option value="none">{{
+            $t("setting.options.antiDnsHijack")
+          }}</option>
+          <option value="dnsforward">{{
+            $t("setting.options.forwardDnsRequest")
+          }}</option>
+          <option v-show="showDoh" value="doh">{{
+            $t("setting.options.doh")
+          }}</option>
         </b-select>
         <template v-if="antipollution === 'doh'">
           <b-button
-            style="border-radius: 0 4px 4px 0"
+            :class="{
+              'right-extra-button': antipollution === 'closed',
+              'no-border-radius': antipollution !== 'closed'
+            }"
             @click="handleClickDohSetting"
           >
-            DoH设置
+            {{ $t("operations.configure") }}
           </b-button>
+        </template>
+        <template v-if="antipollution === 'none' && showDns">
+          <b-button
+            :class="{
+              'right-extra-button': antipollution === 'closed',
+              'no-border-radius': antipollution !== 'closed'
+            }"
+            @click="handleClickDnsSetting"
+          >
+            {{ $t("operations.configure") }}
+          </b-button>
+        </template>
+        <template
+          v-if="antipollution !== 'closed' && iptablesMode === 'tproxy'"
+        >
+          <b-checkbox-button
+            v-model="enhancedMode"
+            :native-value="true"
+            style="position:relative;left:-1px;"
+            >{{ $t("setting.enhancedModeOn") }}
+          </b-checkbox-button>
         </template>
       </b-field>
       <b-field label-position="on-border">
@@ -150,7 +194,7 @@
           TCPFastOpen
           <b-tooltip
             type="is-dark"
-            label="简化TCP握手流程以加速建立连接，可能会增加封包的特征。当前仅支持vmess节点。"
+            :label="$t('setting.messages.tcpFastOpen')"
             multilined
             position="is-right"
           >
@@ -162,17 +206,17 @@
           </b-tooltip>
         </template>
         <b-select v-model="tcpFastOpen" expanded>
-          <option value="default">保持系统默认</option>
-          <option value="yes">启用</option>
-          <option value="no">禁用</option>
+          <option value="default">{{ $t("setting.options.default") }}</option>
+          <option value="yes">{{ $t("setting.options.on") }}</option>
+          <option value="no">{{ $t("setting.options.off") }}</option>
         </b-select>
       </b-field>
       <b-field label-position="on-border" class="with-icon-alert">
         <template slot="label">
-          多路复用
+          {{ $t("setting.mux") }}
           <b-tooltip
             type="is-dark"
-            label="复用TCP连接以减少握手延迟，但会影响吞吐量大的使用场景，如观看视频、下载、测速。当前仅支持vmess节点。"
+            :label="$t('setting.messages.mux')"
             multilined
             position="is-right"
           >
@@ -184,14 +228,14 @@
           </b-tooltip>
         </template>
         <b-select v-model="muxOn" expanded style="flex: 1">
-          <option value="no">关闭</option>
-          <option value="yes">启用</option>
+          <option value="no">{{ $t("setting.options.off") }}</option>
+          <option value="yes">{{ $t("setting.options.on") }}</option>
         </b-select>
         <cus-b-input
           v-if="muxOn === 'yes'"
           ref="muxinput"
           v-model="mux"
-          placeholder="最大并发连接数"
+          :placeholder="$t('setting.concurrency')"
           custom-class="no-shadow"
           type="number"
           min="1"
@@ -201,41 +245,39 @@
         />
       </b-field>
       <b-field
-        v-show="
-          (transparent === 'close' && pacMode === 'gfwlist') ||
-            transparent === 'gfwlist'
-        "
-        label="自动更新GFWList"
+        v-show="pacMode === 'gfwlist' || transparent === 'gfwlist'"
+        :label="$t('setting.autoUpdateGfwlist')"
         label-position="on-border"
       >
         <b-select v-model="pacAutoUpdateMode" expanded>
-          <option value="none">不自动更新PAC文件</option>
-          <option value="auto_update">服务端启动时更新PAC文件</option>
+          <option value="none">{{ $t("setting.options.off") }}</option>
+          <option value="auto_update">{{
+            $t("setting.options.updateGfwlistWhenStart")
+          }}</option>
         </b-select>
       </b-field>
-      <b-field label="自动更新订阅" label-position="on-border">
+      <b-field :label="$t('setting.autoUpdateSub')" label-position="on-border">
         <b-select v-model="subscriptionAutoUpdateMode" expanded>
-          <option value="none">不自动更新订阅</option>
-          <option value="auto_update">服务端启动时更新订阅</option>
+          <option value="none">{{ $t("setting.options.off") }}</option>
+          <option value="auto_update">{{
+            $t("setting.options.updateSubWhenStart")
+          }}</option>
         </b-select>
       </b-field>
       <b-field
-        v-if="transparent === 'close'"
-        label="解析订阅链接/更新时优先使用"
+        :label="$t('setting.preferModeWhenUpdate')"
         label-position="on-border"
       >
         <b-select v-model="proxyModeWhenSubscribe" expanded>
-          <option value="direct">直连模式</option>
-          <option value="pac">PAC模式</option>
-          <option value="proxy">代理模式</option>
+          <option value="direct">{{
+            transparent === "close"
+              ? $t("setting.options.direct")
+              : $t("setting.options.dependTransparentMode")
+          }}</option>
+          <option value="proxy">{{ $t("setting.options.global") }}</option>
+          <option value="pac">{{ $t("setting.options.pac") }}</option>
         </b-select>
       </b-field>
-      <!--      <b-field label="SERVER列表" label-position="on-border">-->
-      <!--        <b-select v-model="serverListMode" expanded>-->
-      <!--          <option value="noSubscription">仅显示非订阅节点</option>-->
-      <!--          <option value="all">显示全部节点</option>-->
-      <!--        </b-select>-->
-      <!--      </b-field>-->
     </section>
     <footer class="modal-card-foot flex-end">
       <button
@@ -243,13 +285,13 @@
         type="button"
         @click="$emit('clickPorts')"
       >
-        地址与端口
+        {{ $t("customAddressPort.title") }}
       </button>
       <button class="button" type="button" @click="$parent.close()">
-        取消
+        {{ $t("operations.cancel") }}
       </button>
       <button class="button is-primary" @click="handleClickSubmit">
-        保存并应用
+        {{ $t("operations.saveApply") }}
       </button>
     </footer>
   </div>
@@ -258,14 +300,18 @@
 <script>
 import { handleResponse, isIntranet } from "@/assets/js/utils";
 import dayjs from "dayjs";
-import ModalConfigurePac from "@/components/modalConfigurePac";
+import ModalCustomRouting from "@/components/modalCustomRouting";
+import ModalCustomRoutingA from "@/components/modalCustomRoutingA";
 import CusBInput from "./input/Input.vue";
-import { isVersionGreaterEqual, parseURL } from "../assets/js/utils";
+import { isVersionGreaterEqual, parseURL, toInt } from "../assets/js/utils";
 import BButton from "buefy/src/components/button/Button";
 import BSelect from "buefy/src/components/select/Select";
 import BCheckboxButton from "buefy/src/components/checkbox/CheckboxButton";
 import modalPortWhiteList from "@/components/modalPortWhiteList";
 import modalDohSetting from "./modalDohSetting";
+import modalDnsSetting from "./modalDnsSetting";
+import axios from "../plugins/axios";
+import { waitingConnected } from "../assets/js/networkInspect";
 
 export default {
   name: "ModalSetting",
@@ -277,24 +323,23 @@ export default {
     mux: "8",
     transparent: "close",
     ipforward: false,
+    enhancedMode: false,
     dnsforward: "no",
     antipollution: "none",
     pacAutoUpdateMode: "none",
     subscriptionAutoUpdateMode: "none",
     customSiteDAT: {},
     pacMode: "whitelist",
-    customPac: {
-      url: "",
-      defaultProxyMode: "direct",
-      routingRules: []
-    },
     showClockPicker: true,
     serverListMode: "noSubscription",
     remoteGFWListVersion: "checking...",
     localGFWListVersion: "checking...",
-    customPacFileVersion: "checking...",
     showAntipollution: false,
-    showDoh: false
+    showDoh: false,
+    showDns: false,
+    showTransparentModeRoutingPac: false,
+    showRoutingA: false,
+    showAntipollutionClosed: false
   }),
   computed: {
     dockerMode() {
@@ -307,15 +352,10 @@ export default {
         port =
           U.protocol === "http" ? "80" : U.protocol === "https" ? "443" : "";
       }
-      return port;
+      return toInt(port);
     },
-    transparentValid() {
-      let val = localStorage["transparentValid"];
-      return (
-        val === "undefined" || //最早版本, 无法判断是否valid, 就默认valid了
-        val === "true" || //boolean版本
-        val === "yes" //最新string版本
-      );
+    iptablesMode() {
+      return localStorage["iptablesMode"] || "tproxy";
     }
   },
   created() {
@@ -344,6 +384,22 @@ export default {
         this.showDoh =
           isVersionGreaterEqual(localStorage["version"], "0.6.2") &&
           localStorage["dohValid"] === "yes";
+        this.showDns = isVersionGreaterEqual(
+          localStorage["version"],
+          "0.7.0.6"
+        );
+        this.showTransparentModeRoutingPac = isVersionGreaterEqual(
+          localStorage["version"],
+          "0.6.4"
+        );
+        this.showAntipollutionClosed = isVersionGreaterEqual(
+          localStorage["version"],
+          "0.7.0.2"
+        );
+        this.showRoutingA = isVersionGreaterEqual(
+          localStorage["version"],
+          "0.6.8"
+        );
       });
     });
     //白名单有没有项，没有就post一下
@@ -356,7 +412,7 @@ export default {
             url: apiRoot + "/portWhiteList",
             method: "post",
             data: {
-              requestPort: this.v2rayaPort
+              requestPort: this.v2rayaPort.toString()
             }
           });
         }
@@ -370,76 +426,67 @@ export default {
     handleClickUpdateGFWList() {
       this.$axios({
         url: apiRoot + "/gfwList",
-        method: "put"
+        method: "put",
+        timeout: 0
       }).then(res => {
         handleResponse(res, this, () => {
           this.localGFWListVersion = res.data.data.localGFWListVersion;
           this.$buefy.toast.open({
-            message: "更新成功",
+            message: this.$t("common.success"),
             type: "is-warning",
             position: "is-top",
-            duration: 5000
+            duration: 5000,
+            queue: false
           });
         });
       });
     },
     requestUpdateSetting() {
-      this.$axios({
-        url: apiRoot + "/setting",
-        method: "put",
-        data: {
-          proxyModeWhenSubscribe: this.proxyModeWhenSubscribe,
-          pacAutoUpdateMode: this.pacAutoUpdateMode,
-          pacAutoUpdateTime: this.pacAutoUpdateTime
-            ? this.pacAutoUpdateTime.getTime()
-            : 0,
-          subscriptionAutoUpdateMode: this.subscriptionAutoUpdateMode,
-          subscriptionAutoUpdateTime: this.subscriptionAutoUpdateTime
-            ? this.subscriptionAutoUpdateTime.getTime()
-            : 0,
-          customPac: this.customPac,
-          pacMode: this.pacMode,
-          tcpFastOpen: this.tcpFastOpen,
-          muxOn: this.muxOn,
-          mux: parseInt(this.mux),
-          transparent: this.transparent,
-          ipforward: this.ipforward,
-          dnsforward: this.antipollution === "dnsforward" ? "yes" : "no", //版本兼容
-          antipollution: this.antipollution
-        }
-      }).then(res => {
-        handleResponse(res, this, () => {
-          this.$buefy.toast.open({
-            message: res.data.code,
-            type: "is-primary",
-            position: "is-top"
+      let cancel;
+      waitingConnected(
+        this.$axios({
+          url: apiRoot + "/setting",
+          method: "put",
+          data: {
+            proxyModeWhenSubscribe: this.proxyModeWhenSubscribe,
+            pacAutoUpdateMode: this.pacAutoUpdateMode,
+            pacAutoUpdateTime: this.pacAutoUpdateTime
+              ? this.pacAutoUpdateTime.getTime()
+              : 0,
+            subscriptionAutoUpdateMode: this.subscriptionAutoUpdateMode,
+            subscriptionAutoUpdateTime: this.subscriptionAutoUpdateTime
+              ? this.subscriptionAutoUpdateTime.getTime()
+              : 0,
+            pacMode: this.pacMode,
+            tcpFastOpen: this.tcpFastOpen,
+            muxOn: this.muxOn,
+            mux: parseInt(this.mux),
+            transparent: this.transparent,
+            ipforward: this.ipforward,
+            enhancedMode: this.enhancedMode,
+            dnsforward: this.antipollution === "dnsforward" ? "yes" : "no", //版本兼容
+            antipollution: this.antipollution
+          },
+          cancelToken: new axios.CancelToken(function executor(c) {
+            cancel = c;
+          })
+        }).then(res => {
+          handleResponse(res, this, () => {
+            this.$buefy.toast.open({
+              message: res.data.code,
+              type: "is-primary",
+              position: "is-top",
+              queue: false
+            });
+            this.$parent.close();
           });
-          this.$parent.close();
-        });
-      });
+        }),
+        3 * 1000,
+        cancel
+      );
     },
     handleClickSubmit() {
       if (this.muxOn === "yes" && !this.$refs.muxinput.checkHtml5Validity()) {
-        return;
-      }
-      if (this.pacMode === "custom" && this.customPac.url.length <= 0) {
-        this.$buefy.toast.open({
-          message: "自定义PAC模式下，SiteDAT file URL不能为空",
-          type: "is-warning",
-          position: "is-top",
-          duration: 3000
-        });
-        return;
-      } else if (
-        this.pacMode === "custom" &&
-        this.customPac.routingRules.length <= 0
-      ) {
-        this.$buefy.toast.open({
-          message: "您还没有配置PAC路由呢",
-          type: "is-warning",
-          position: "is-top",
-          duration: 3000
-        });
         return;
       }
       if (this.transparent !== "close" && !isIntranet(apiRoot)) {
@@ -455,13 +502,13 @@ export default {
           .then(res => {
             handleResponse(res, this, () => {
               this.$buefy.dialog.confirm({
-                title: "提示",
-                message: `<div class=""><p>您正在对不同子网下的机器设置透明代理，请确认不走代理的出方向端口。</p>
-              <p>当前设置的端口白名单为：</p>
-              <p>TCP: ${res.data.data.tcp.join(", ")}</p>
-              <p>UDP: ${res.data.data.udp.join(", ")}</p>`,
-                cancelText: "取消",
-                confirmText: "确认无误",
+                title: this.$t("common.message"),
+                message: this.$t("setting.messages.confirmEgressPorts", {
+                  tcpPorts: res.data.data.tcp.join(", "),
+                  udpPorts: res.data.data.udp.join(", ")
+                }),
+                cancelText: this.$t("operations.cancel"),
+                confirmText: this.$t("operations.confirm2"),
                 type: "is-danger",
                 onConfirm: () => this.requestUpdateSetting()
               });
@@ -476,20 +523,19 @@ export default {
       }
     },
     handleClickConfigurePac() {
-      const that = this;
       this.$buefy.modal.open({
         parent: this,
-        component: ModalConfigurePac,
+        component: ModalCustomRouting,
         hasModalCard: true,
-        canCancel: false,
-        props: {
-          customPac: this.customPac
-        },
-        events: {
-          submit(val) {
-            that.customPac = val;
-          }
-        }
+        canCancel: true
+      });
+    },
+    handleClickConfigureRoutingA() {
+      this.$buefy.modal.open({
+        parent: this,
+        component: ModalCustomRoutingA,
+        hasModalCard: true,
+        canCancel: true
       });
     },
     handleClickPortWhiteList() {
@@ -504,6 +550,14 @@ export default {
       this.$buefy.modal.open({
         parent: this,
         component: modalDohSetting,
+        hasModalCard: true,
+        canCancel: true
+      });
+    },
+    handleClickDnsSetting() {
+      this.$buefy.modal.open({
+        parent: this,
+        component: modalDnsSetting,
         hasModalCard: true,
         canCancel: true
       });
@@ -575,5 +629,16 @@ export default {
 }
 .left-border select {
   border-radius: 4px 0 0 4px !important;
+}
+.right-extra-button {
+  border-radius: 0 4px 4px 0;
+}
+.no-border-radius {
+  border-radius: 0;
+}
+.modal-setting {
+  .b-checkbox.checkbox {
+    margin-right: 0;
+  }
 }
 </style>

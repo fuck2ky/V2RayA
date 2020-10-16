@@ -1,16 +1,15 @@
 package service
 
 import (
-	"V2RayA/global"
-	"V2RayA/model/v2ray"
-	"V2RayA/persistence/configure"
-	"errors"
+	"github.com/v2rayA/v2rayA/core/v2ray"
+	"github.com/v2rayA/v2rayA/core/v2ray/asset/gfwlist"
+	"github.com/v2rayA/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/global"
 	"log"
 )
 
 func Disconnect() (err error) {
-	_ = CheckAndStopTransparentProxy()
-	global.SSRs.ClearAll()
+	global.Plugins.CloseAll()
 	err = v2ray.StopV2rayService()
 	if err != nil {
 		return
@@ -26,9 +25,25 @@ func Disconnect() (err error) {
 	return
 }
 
+func checkAssetsExist(setting *configure.Setting) error {
+	//FIXME: non-fully check
+	if setting.PacMode == configure.GfwlistMode || setting.Transparent == configure.TransparentGfwlist {
+		if !gfwlist.LoyalsoldierSiteDatExists() {
+			return newError("GFWList file not exists. Try updating GFWList please")
+		}
+	}
+	return nil
+}
+
 func Connect(which *configure.Which) (err error) {
+	log.Println("Connect: begin")
+	defer log.Println("Connect: done")
+	setting := GetSetting()
+	if err = checkAssetsExist(setting); err != nil {
+		return
+	}
 	if which == nil {
-		return errors.New("which不能为nil")
+		return newError("which can not be nil")
 	}
 	//定位Server
 	tsr, err := which.LocateServer()
@@ -36,8 +51,16 @@ func Connect(which *configure.Which) (err error) {
 		log.Println(err)
 		return
 	}
+	cs := configure.GetConnectedServer()
+	defer func() {
+		if err != nil && cs != nil && v2ray.IsV2RayRunning() {
+			_ = configure.SetConnect(cs)
+		}
+	}()
+	//unset connectedServer to avoid refresh in advance
+	_ = configure.ClearConnected()
 	//根据找到的Server更新V2Ray的配置
-	err = v2ray.UpdateV2RayConfigAndRestart(&tsr.VmessInfo)
+	err = v2ray.UpdateV2RayConfig(&tsr.VmessInfo)
 	if err != nil {
 		return
 	}

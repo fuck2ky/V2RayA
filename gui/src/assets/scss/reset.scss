@@ -1,3 +1,4 @@
+@import "../iconfont/fonts/font_ex";
 body.has-navbar-fixed-top, html.has-navbar-fixed-top{
   padding-top:2.25rem;
 }
@@ -28,4 +29,30 @@ nav::-webkit-scrollbar-thumb {
   background-color: #d0d0d0;
   outline: 1px solid slategrey;
   border-radius: 5px;
+}
+
+code {
+  color: #0087e1 !important;
+}
+
+html{
+  @media screen and (max-width: 1400px) {
+      font-size:0.9em;
+    @media screen and (max-width: 767px) {
+      font-size:0.8em;
+      @media screen and (max-width: 350px) {
+        font-size:0.7em;
+      }
+    }
+  }
+}
+
+.routinga-animation-content{
+  width: 100%;
+  max-height: 100%;
+  max-width: unset !important;
+}
+
+.modal-close:not(:hover){
+  filter: drop-shadow(0 0 5px #000);
 }

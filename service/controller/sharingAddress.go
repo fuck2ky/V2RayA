@@ -1,25 +1,24 @@
 package controller
 
 import (
-	"V2RayA/persistence/configure"
-	"V2RayA/service"
-	"V2RayA/tools"
-	"github.com/json-iterator/go"
-	"errors"
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/service"
 	"github.com/gin-gonic/gin"
+	"github.com/json-iterator/go"
 )
 
 func GetSharingAddress(ctx *gin.Context) {
 	var w configure.Which
 	err := jsoniter.Unmarshal([]byte(ctx.Query("touch")), &w)
 	if err != nil {
-		tools.ResponseError(ctx, errors.New("参数有误"))
+		common.ResponseError(ctx, logError(nil, "bad request"))
 		return
 	}
 	addr, err := service.GetSharingAddress(&w)
 	if err != nil {
-		tools.ResponseError(ctx, err)
+		common.ResponseError(ctx, logError(err))
 		return
 	}
-	tools.ResponseSuccess(ctx, gin.H{"sharingAddress": addr})
+	common.ResponseSuccess(ctx, gin.H{"sharingAddress": addr})
 }

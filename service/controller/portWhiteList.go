@@ -1,37 +1,37 @@
 package controller
 
 import (
-	"V2RayA/global"
-	"V2RayA/persistence/configure"
-	"V2RayA/service"
-	"V2RayA/tools"
-	"errors"
 	"github.com/gin-gonic/gin"
 	"strconv"
 	"strings"
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/core/v2ray"
+	"github.com/v2rayA/v2rayA/global"
+	"github.com/v2rayA/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/service"
 )
 
 func GetPortWhiteList(ctx *gin.Context) {
-	tools.ResponseSuccess(ctx, configure.GetPortWhiteListNotNil())
+	common.ResponseSuccess(ctx, configure.GetPortWhiteListNotNil())
 }
 
 func PutPortWhiteList(ctx *gin.Context) {
 	var data configure.PortWhiteList
 	err := ctx.ShouldBindJSON(&data)
 	if err != nil {
-		tools.ResponseError(ctx, errors.New("参数有误"))
+		common.ResponseError(ctx, logError(nil, "bad request"))
 		return
 	}
 	if !data.Valid() {
-		tools.ResponseError(ctx, errors.New("包含无效的端口格式"))
+		common.ResponseError(ctx, logError(nil, "invalid format of port"))
 		return
 	}
 	err = configure.SetPortWhiteList(&data)
 	if err != nil {
-		tools.ResponseError(ctx, err)
+		common.ResponseError(ctx, logError(err))
 		return
 	}
-	tools.ResponseSuccess(ctx, nil)
+	common.ResponseSuccess(ctx, nil)
 }
 
 func PostPortWhiteList(ctx *gin.Context) {
@@ -40,7 +40,7 @@ func PostPortWhiteList(ctx *gin.Context) {
 	}
 	err := ctx.ShouldBindJSON(&data)
 	if err != nil {
-		tools.ResponseError(ctx, errors.New("参数有误"))
+		common.ResponseError(ctx, logError(nil, "bad request"))
 		return
 	}
 	p := service.GetPortsDefault()
@@ -51,8 +51,10 @@ func PostPortWhiteList(ctx *gin.Context) {
 	}
 	err = configure.SetPortWhiteList(&wpl)
 	if err != nil {
-		tools.ResponseError(ctx, err)
+		common.ResponseError(ctx, logError(err))
 		return
 	}
-	tools.ResponseSuccess(ctx, nil)
+	v2ray.CheckAndStopTransparentProxy()
+	v2ray.CheckAndSetupTransparentProxy(true)
+	common.ResponseSuccess(ctx, nil)
 }

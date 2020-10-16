@@ -1,13 +1,12 @@
 package service
 
 import (
-	"V2RayA/model/v2ray"
-	"V2RayA/persistence/configure"
-	ports2 "V2RayA/tools/ports"
-	"errors"
+	"github.com/v2rayA/v2rayA/common/netTools/netstat"
+	ports2 "github.com/v2rayA/v2rayA/common/netTools/ports"
+	"github.com/v2rayA/v2rayA/core/v2ray"
+	"github.com/v2rayA/v2rayA/db/configure"
 	"fmt"
 	"strconv"
-	"strings"
 )
 
 func GetPortsDefault() configure.Ports {
@@ -38,49 +37,43 @@ func SetPorts(ports *configure.Ports) (err error) {
 		cnt++
 	}
 	if cnt > len(set) {
-		return errors.New("端口之间不能重复，请检查")
+		return newError("ports duplicate. check it")
 	}
+	detectSyntax := make([]string, 0, 3)
 	if ports.Socks5 != p.Socks5 {
 		p.Socks5 = ports.Socks5
-		if ports.Socks5 != 0 {
-			if o, w := ports2.IsPortOccupied(strconv.Itoa(p.Socks5), "tcp", true); o {
-				arr := strings.Split(w, "/")
-				if arr[1] != "v2ray" {
-					return errors.New(fmt.Sprintf("%v端口已被%v占用，请检查", p.Socks5, w))
-				}
-			} else if o, w := ports2.IsPortOccupied(strconv.Itoa(p.Socks5), "udp", true); o {
-				arr := strings.Split(w, "/")
-				if arr[1] != "v2ray" {
-					return errors.New(fmt.Sprintf("%v端口已被%v占用，请检查", p.Socks5, w))
-				}
-			}
+		if p.Socks5 != 0 {
+			detectSyntax = append(detectSyntax, strconv.Itoa(p.Socks5)+":tcp,udp")
 		}
 	}
 	if ports.Http != p.Http {
 		p.Http = ports.Http
-		if ports.Http != 0 {
-			if o, w := ports2.IsPortOccupied(strconv.Itoa(p.Http), "tcp", true); o {
-				arr := strings.Split(w, "/")
-				if arr[1] != "v2ray" {
-					return errors.New(fmt.Sprintf("%v端口已被%v占用，请检查", p.Http, w))
-				}
-			}
+		if p.Http != 0 {
+			detectSyntax = append(detectSyntax, strconv.Itoa(p.Http)+":tcp")
 		}
 	}
 	if ports.HttpWithPac != p.HttpWithPac {
 		p.HttpWithPac = ports.HttpWithPac
-		if ports.HttpWithPac != 0 {
-			if o, w := ports2.IsPortOccupied(strconv.Itoa(p.HttpWithPac), "tcp", true); o {
-				arr := strings.Split(w, "/")
-				if arr[1] != "v2ray" {
-					return errors.New(fmt.Sprintf("%v端口已被%v占用，请检查", p.HttpWithPac, w))
-				}
-			}
+		if p.HttpWithPac != 0 {
+			detectSyntax = append(detectSyntax, strconv.Itoa(p.HttpWithPac)+":tcp")
+		}
+	}
+	var (
+		o bool
+		v *netstat.Socket
+	)
+	if o, v, err = ports2.IsPortOccupied(detectSyntax); o {
+		if err != nil {
+			return
+		}
+		process, err := v.Process()
+		if err == nil && process.Name != "v2ray" {
+			return newError(fmt.Sprintf("port %v is occupied by %v", v.LocalAddress.Port, process.Name))
 		}
 	}
 	err = configure.SetPorts(&p)
 	if err != nil {
 		return
 	}
-	return v2ray.UpdateV2rayWithConnectedServer()
+	return v2ray.UpdateV2RayConfig(nil)
 }

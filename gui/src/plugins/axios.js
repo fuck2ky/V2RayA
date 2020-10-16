@@ -12,8 +12,11 @@ import ModalLogin from "@/components/modalLogin";
 import { parseURL } from "../assets/js/utils";
 import browser from "@/assets/js/browser";
 import modalCustomPorts from "../components/modalCustomPorts";
+import i18n from "../plugins/i18n";
 
 Vue.prototype.$axios = axios;
+
+axios.defaults.timeout = 60 * 1000; // timeout: 60秒
 
 axios.interceptors.request.use(
   config => {
@@ -42,16 +45,15 @@ function informNotRunning(url = localStorage["backendAddress"]) {
   }
   informed = url;
   SnackbarProgrammatic.open({
-    message: "您是否需要调整服务端地址？",
+    message: i18n.t("axios.messages.optimizeBackend"),
     type: "is-primary",
     queue: false,
     duration: 10000,
     position: "is-top",
-    actionText: "是",
+    actionText: i18n.t("operations.yes"),
     onAction: () => {
       // this.showCustomPorts = true;
       ModalProgrammatic.open({
-        parent: this,
         component: modalCustomPorts,
         hasModalCard: true,
         customClass: "modal-custom-ports"
@@ -59,17 +61,14 @@ function informNotRunning(url = localStorage["backendAddress"]) {
     }
   });
   SnackbarProgrammatic.open({
-    message: `未在 ${url} 检测到V2RayA服务端，请确定V2RayA已正确安装且配置正确`,
+    message: i18n.t("axios.messages.noBackendFound", { url }),
     type: "is-warning",
     queue: false,
     position: "is-top",
     duration: 10000,
-    actionText: "查看帮助",
+    actionText: i18n.t("operations.helpManual"),
     onAction: () => {
-      window.open(
-        "https://github.com/mzz2017/V2RayA#%E4%BD%BF%E7%94%A8",
-        "_blank"
-      );
+      window.open(i18n.t("axios.urls.usage"), "_blank");
     }
   });
 }
@@ -81,8 +80,14 @@ axios.interceptors.response.use(
   function(err) {
     console.log("!!", err.name, err.message);
     console.log(Object.assign({}, err));
-    let u = parseURL(err.config.url);
-    let host = u.host;
+    if (err.code === "ECONNABORTED" && err.isAxiosError) {
+      return Promise.reject(err);
+    }
+    let u, host;
+    if (err.config) {
+      u = parseURL(err.config.url);
+      host = u.host;
+    }
     if (err.response && err.response.status === 401) {
       //401未授权
       new Vue({
@@ -122,7 +127,7 @@ axios.interceptors.response.use(
       u.protocol === "http"
     ) {
       //https前端通信http后端
-      let msg = `无法通信。如果您的服务端已正常运行，且端口正常开放，原因可能是当前浏览器不允许https站点访问http资源，您可以尝试切换为http备用站点。`;
+      let msg = i18n.t("axios.messages.cannotCommunicate.0");
       if (host === "localhost" || host === "local" || host === "127.0.0.1") {
         if (browser.versions.webKit) {
           //Chrome等webkit内核浏览器允许访问http://localhost，只有可能是服务端未启动
@@ -130,9 +135,7 @@ axios.interceptors.response.use(
           return;
         }
         if (browser.versions.gecko) {
-          msg = `无法通信。即使您的服务端正常运行，火狐浏览器也不允许https站点访问http资源，包括${host}，您可以换用Chrome浏览器或切换为http备用站点。`;
-        } else {
-          msg = `无法通信。如果您的服务端已正常运行，原因可能是当前浏览器不允许https站点访问http资源，包括${host}，您可以换用Chrome浏览器或切换为http备用站点。`;
+          msg = i18n.t("axios.messages.cannotCommunicate.1");
         }
       }
       SnackbarProgrammatic.open({
@@ -141,33 +144,45 @@ axios.interceptors.response.use(
         position: "is-top",
         queue: false,
         duration: 10000,
-        actionText: "切换为备用站点",
+        actionText: i18n.t("operations.switchSite"),
         onAction: () => {
           window.open("http://v.mzz.pub", "_self");
-          // ToastProgrammatic.open({
-          //   message:
-          //     "暂无备用站点，如果您有意提供自动部署的HTTP站点，可以邮件至m@mzz.pub或直接发起pull request",
-          //   type: "is-warning",
-          //   position: "is-top",
-          //   queue: false,
-          //   duration: 10000
-          // });
         }
       });
-    } else if (err.message === "Network Error") {
+      SnackbarProgrammatic.open({
+        message: i18n.t("axios.messages.optimizeBackend"),
+        type: "is-primary",
+        queue: false,
+        duration: 10000,
+        position: "is-top",
+        actionText: i18n.t("operations.yes"),
+        onAction: () => {
+          // this.showCustomPorts = true;
+          ModalProgrammatic.open({
+            component: modalCustomPorts,
+            hasModalCard: true,
+            customClass: "modal-custom-ports"
+          });
+        }
+      });
+    } else if (
+      (err.message && err.message === "Network Error") ||
+      (err.config && err.config.url === "/api/version")
+    ) {
       informNotRunning(u.source.replace(u.relative, ""));
     } else {
       //其他错误
       if (
-        err.message.indexOf("404") >= 0 ||
+        !err.message ||
+        (err.message && err.message.indexOf("404") >= 0) ||
         (err.response && err.response.status === 404)
       ) {
-        //接口不存在，可能服务端是老旧版本，不管
+        //接口不存在，或是正常错误（如取消），可能服务端是老旧版本，不管
         return Promise.reject(err);
       }
       console.log("!other");
       ToastProgrammatic.open({
-        message: err.message,
+        message: err,
         type: "is-warning",
         position: "is-top",
         queue: false,
@@ -177,3 +192,5 @@ axios.interceptors.response.use(
     return Promise.reject(err);
   }
 );
+
+export default axios;

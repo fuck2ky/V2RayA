@@ -1,12 +1,11 @@
 package controller
 
 import (
-	"V2RayA/model/touch"
-	"V2RayA/model/v2ray"
-	"V2RayA/persistence/configure"
-	"V2RayA/service"
-	"V2RayA/tools"
-	"errors"
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/core/touch"
+	"github.com/v2rayA/v2rayA/core/v2ray"
+	"github.com/v2rayA/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -16,7 +15,7 @@ func GetTouch(ctx *gin.Context) {
 	if !running { //如果没有运行，把connectedServer删掉，防止前端错误渲染
 		t.ConnectedServer = nil
 	}
-	tools.ResponseSuccess(ctx, gin.H{
+	common.ResponseSuccess(ctx, gin.H{
 		"running": running,
 		"touch":   t,
 	})
@@ -26,12 +25,12 @@ func DeleteTouch(ctx *gin.Context) {
 	var ws configure.Whiches
 	err := ctx.ShouldBindJSON(&ws)
 	if err != nil {
-		tools.ResponseError(ctx, errors.New("参数有误"))
+		common.ResponseError(ctx, logError(nil, "bad request"))
 		return
 	}
 	err = service.DeleteWhich(ws.Get())
 	if err != nil {
-		tools.ResponseError(ctx, err)
+		common.ResponseError(ctx, logError(err))
 		return
 	}
 	GetTouch(ctx)

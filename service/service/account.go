@@ -1,16 +1,15 @@
 package service
 
 import (
-	"V2RayA/persistence/configure"
-	"V2RayA/tools"
-	"V2RayA/tools/jwt"
-	"errors"
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/common/jwt"
+	"github.com/v2rayA/v2rayA/db/configure"
 	"time"
 )
 
 func Login(username, password string) (token string, err error) {
 	if !IsValidAccount(username, password) {
-		return "", errors.New("用户名或密码错误")
+		return "", newError("wrong username or password")
 	}
 	dur := 3 * time.Hour
 	return jwt.MakeJWT(map[string]string{
@@ -23,20 +22,24 @@ func IsValidAccount(username, password string) bool {
 	if err != nil {
 		return false
 	}
-	return pwd == tools.CryptoPwd(password)
+	return pwd == common.CryptoPwd(password)
 }
 
 func Register(username, password string) (token string, err error) {
 	if configure.ExistsAccount(username) {
-		return "", errors.New("用户名已存在")
+		return "", newError("username exists")
 	}
-	err = configure.SetAccount(username, tools.CryptoPwd(password))
+	err = configure.SetAccount(username, common.CryptoPwd(password))
 	if err != nil {
 		return
 	}
-	return Login(username,password)
+	return Login(username, password)
 }
 
-func ValidPasswordLength(password string) bool {
-	return len(password) >= 5 && len(password) <= 32
+func ValidPasswordLength(password string) (bool, error) {
+	if len(password) >= 6 && len(password) <= 32 {
+		return true, nil
+	} else {
+		return false, newError("length of password should be between 6 and 32")
+	}
 }

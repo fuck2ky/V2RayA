@@ -1,45 +1,44 @@
 package controller
 
 import (
-	"V2RayA/persistence/configure"
-	"V2RayA/service"
-	"V2RayA/tools"
-	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/json-iterator/go"
 	"time"
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/service"
 )
 
 func GetPingLatency(ctx *gin.Context) {
-	var wt []configure.Which
+	var wt []*configure.Which
 	err := jsoniter.Unmarshal([]byte(ctx.Query("whiches")), &wt)
 	if err != nil {
-		tools.ResponseError(ctx, errors.New("参数有误"))
+		common.ResponseError(ctx, logError(nil, "bad request"))
 		return
 	}
-	wt, err = service.Ping(wt, 5*time.Second)
+	wt, err = service.Ping(wt, 1*time.Second)
 	if err != nil {
-		tools.ResponseError(ctx, err)
+		common.ResponseError(ctx, logError(err))
 		return
 	}
-	tools.ResponseSuccess(ctx, gin.H{
+	common.ResponseSuccess(ctx, gin.H{
 		"whiches": wt,
 	})
 }
 
 func GetHttpLatency(ctx *gin.Context) {
-	var wt []configure.Which
+	var wt []*configure.Which
 	err := jsoniter.Unmarshal([]byte(ctx.Query("whiches")), &wt)
 	if err != nil {
-		tools.ResponseError(ctx, errors.New("参数有误"))
+		common.ResponseError(ctx, logError(nil, "bad request"))
 		return
 	}
-	wt, err = service.TestHttpLatency(wt, 10*time.Second, 4)
+	wt, err = service.TestHttpLatency(wt, 8*time.Second, 4, false)
 	if err != nil {
-		tools.ResponseError(ctx, err)
+		common.ResponseError(ctx, logError(err))
 		return
 	}
-	tools.ResponseSuccess(ctx, gin.H{
+	common.ResponseSuccess(ctx, gin.H{
 		"whiches": wt,
 	})
 }

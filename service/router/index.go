@@ -1,18 +1,68 @@
 package router
 
 import (
-	"V2RayA/controller"
-	"V2RayA/global"
-	"V2RayA/persistence/configure"
-	"V2RayA/tools"
-	"V2RayA/tools/jwt"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/gookit/color"
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/common/jwt"
+	"github.com/v2rayA/v2rayA/common/netTools"
+	"github.com/v2rayA/v2rayA/controller"
+	"github.com/v2rayA/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/global"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"path"
+	"path/filepath"
 )
+
+func ServeGUI(engine *gin.Engine) {
+	defer func() {
+		if msg := recover(); msg != nil {
+			log.Println(msg)
+		}
+	}()
+	webDir := global.GetEnvironmentConfig().WebDir
+	filepath.Walk(webDir, func(path string, info os.FileInfo, err error) error {
+		if path == webDir {
+			return nil
+		}
+		if info.IsDir() {
+			engine.Static("/"+info.Name(), path)
+			return filepath.SkipDir
+		}
+		engine.StaticFile("/"+info.Name(), path)
+		return nil
+	})
+	engine.LoadHTMLFiles(path.Join(webDir, "index.html"))
+	engine.GET("/", func(context *gin.Context) {
+		context.HTML(http.StatusOK, "index.html", nil)
+	})
+
+	app := global.GetEnvironmentConfig()
+
+	ip, port := netTools.ParseAddress(app.Address)
+	addrs, err := net.InterfaceAddrs()
+	if net.ParseIP(ip).IsUnspecified() && err == nil {
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok {
+				if ipnet.IP.To4() == nil {
+					printRunningAt("http://[" + ipnet.IP.String() + ":" + port + "]")
+				} else {
+					printRunningAt("http://" + ipnet.IP.String() + ":" + port)
+				}
+			}
+		}
+	} else {
+		printRunningAt("http://" + app.Address)
+	}
+}
 
 func Run() error {
 	engine := gin.New()
+	//ginpprof.Wrap(engine)
 	engine.Use(gin.Recovery())
 	corsConfig := cors.DefaultConfig()
 	corsConfig.AllowAllOrigins = true
@@ -21,9 +71,6 @@ func Run() error {
 	}
 	corsConfig.AddAllowHeaders("Authorization")
 	engine.Use(cors.New(corsConfig))
-	engine.GET("/", func(ctx *gin.Context) {
-		ctx.String(200, `这里是V2RayA服务端，请配合前端GUI使用，方法：https://github.com/mzz2017/V2RayA/blob/master/README.md`)
-	})
 	noAuth := engine.Group("api")
 	{
 		noAuth.GET("version", controller.GetVersion)
@@ -33,7 +80,7 @@ func Run() error {
 	auth := engine.Group("api")
 	auth.Use(func(ctx *gin.Context) {
 		if !configure.HasAnyAccounts() {
-			tools.Response(ctx, tools.UNAUTHORIZED, gin.H{
+			common.Response(ctx, common.UNAUTHORIZED, gin.H{
 				"first": true,
 			})
 			ctx.Abort()
@@ -61,14 +108,26 @@ func Run() error {
 		auth.PATCH("subscription", controller.PatchSubscription)
 		auth.GET("ports", controller.GetPorts)
 		auth.PUT("ports", controller.PutPorts)
-		auth.PUT("account", controller.PutAccount)
+		//auth.PUT("account", controller.PutAccount)
 		auth.GET("portWhiteList", controller.GetPortWhiteList)
 		auth.PUT("portWhiteList", controller.PutPortWhiteList)
 		auth.POST("portWhiteList", controller.PostPortWhiteList)
 		auth.GET("dohList", controller.GetDohList)
 		auth.PUT("dohList", controller.PutDohList)
+		auth.GET("dnsList", controller.GetDnsList)
+		auth.PUT("dnsList", controller.PutDnsList)
+		auth.GET("siteDatFiles", controller.GetSiteDatFiles)
+		auth.GET("customPac", controller.GetCustomPac)
+		auth.PUT("customPac", controller.PutCustomPac)
+		auth.GET("routingA", controller.GetRoutingA)
+		auth.PUT("routingA", controller.PutRoutingA)
 	}
-	color.Red.Println("GUI demo: https://v2raya.mzz.pub")
-	app := global.GetEnvironmentConfig()
-	return engine.Run(app.Address)
+
+	ServeGUI(engine)
+
+	return engine.Run(global.GetEnvironmentConfig().Address)
+}
+
+func printRunningAt(address string) {
+	color.Red.Println("v2rayA is listening at", address)
 }

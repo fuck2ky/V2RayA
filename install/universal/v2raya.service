@@ -1,0 +1,14 @@
+[Unit]
+Description=v2rayA Service
+Documentation=https://github.com/v2rayA/v2rayA/wiki
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/v2raya
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

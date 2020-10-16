@@ -3,12 +3,12 @@
     <b-navbar ref="navs" fixed-top shadow type="is-light">
       <template slot="brand">
         <b-navbar-item href="/">
-          <img src="./assets/logo2.png" alt="V2RayA" class="logo no-select" />
+          <img src="./assets/logo2.png" alt="v2rayA" class="logo no-select" />
         </b-navbar-item>
       </template>
       <template slot="start">
         <b-navbar-item tag="div">
-          v2ray-core状态：
+          {{ $t("common.v2rayCoreStatus") }}：
           <b-tag
             id="statusTag"
             :type="statusMap[runningState.running]"
@@ -27,11 +27,11 @@
         <!--        </b-navbar-item>-->
         <b-navbar-item tag="a" @click.native="handleClickSetting">
           <i class="iconfont icon-setting" style="font-size: 1.25em"></i>
-          设置
+          {{ $t("common.setting") }}
         </b-navbar-item>
         <b-navbar-item tag="a" @click.native="handleClickAbout">
           <i class="iconfont icon-heart" style="font-size: 1.25em"></i>
-          关于
+          {{ $t("common.about") }}
         </b-navbar-item>
         <b-dropdown
           position="is-bottom-left"
@@ -46,9 +46,26 @@
               style="position: relative; top: 1px; left:2px"
             ></i>
           </a>
-
-          <b-dropdown-item custom aria-role="menuitem">
-            Logged as <b>{{ username }}</b>
+          <b-dropdown-item
+            custom
+            aria-role="menuitem"
+            v-html="$t('common.loggedAs', { username })"
+          >
+          </b-dropdown-item>
+          <b-dropdown-item
+            custom
+            aria-role="menuitem"
+            class="is-flex"
+            style="box-sizing: content-box;height: 16px;width: 60px;justify-content: space-between;"
+          >
+            <img
+              v-for="lang of langs"
+              :key="lang.flag"
+              :src="`/img/flags/flag_${lang.flag}.svg`"
+              :alt="lang.alt"
+              style="height:100%;flex-shrink: 0;cursor: pointer"
+              @click="handleClickLang(lang.flag)"
+            />
           </b-dropdown-item>
           <hr class="dropdown-divider" />
           <b-dropdown-item
@@ -61,7 +78,7 @@
               class="iconfont icon-logout"
               style="position: relative;top:1px;"
             ></i>
-            Logout
+            {{ $t("operations.logout") }}
           </b-dropdown-item>
         </b-dropdown>
       </template>
@@ -82,111 +99,105 @@
 </template>
 
 <script>
-  import CONST from "@/assets/js/const";
-  import ModalSetting from "@/components/modalSetting";
-  import node from "@/components/node";
-  import {Base64} from "js-base64";
-  import ModalCustomAddress from "./components/modalCustomPorts";
-  import {parseURL} from "./assets/js/utils";
+import ModalSetting from "@/components/modalSetting";
+import node from "@/node";
+import { Base64 } from "js-base64";
+import ModalCustomAddress from "./components/modalCustomPorts";
+import { parseURL } from "./assets/js/utils";
+import { waitingConnected } from "./assets/js/networkInspect";
+import axios from "./plugins/axios";
 
-  export default {
+export default {
   components: { ModalCustomAddress, node },
   data() {
     return {
       statusMap: {
-        [CONST.INSPECTING_RUNNING]: "is-light",
-        [CONST.NOT_RUNNING]: "is-danger",
-        [CONST.IS_RUNNING]: "is-success"
+        [this.$t("common.checkRunning")]: "is-light",
+        [this.$t("common.notRunning")]: "is-danger",
+        [this.$t("common.isRunning")]: "is-success"
       },
       coverStatusText: "",
       runningState: {
-        running: CONST.INSPECTING_RUNNING,
+        running: this.$t("common.checkRunning"),
         connectedServer: null,
         lastConnectedServer: null
       },
-      showCustomPorts: false
+      showCustomPorts: false,
+      langs: [
+        { flag: "zh", alt: "简体中文" },
+        { flag: "en", alt: "English" }
+      ]
     };
   },
   computed: {
     username() {
       let token = localStorage["token"];
       if (!token) {
-        return "未登录";
+        return this.$t("common.notLogin");
       }
       let payload = JSON.parse(Base64.decode(token.split(".")[1]));
       return payload["uname"];
     }
   },
   created() {
+    console.log("app created");
     let ba = localStorage.getItem("backendAddress");
-    if (!ba) {
-      ba = "http://localhost:2017";
-      localStorage.setItem("backendAddress", ba);
+    if (ba) {
+      let u = parseURL(ba);
+      document.title = `v2rayA - ${u.host}:${u.port}`;
     }
-    let u = parseURL(ba);
-    document.title = `V2RayA - ${u.host}:${u.port}`;
     this.$axios({
       url: apiRoot + "/version"
     }).then(res => {
       if (res.data.code === "SUCCESS") {
         let toastConf = {
-          message: `V2RayA服务端正在运行${
-            res.data.data.dockerMode ? "于Docker环境中" : ""
-          }，Version: ${res.data.data.version}`,
+          message: this.$t(
+            res.data.data.dockerMode ? "welcome.docker" : "welcome.default",
+            { version: res.data.data.version }
+          ),
           type: "is-dark",
           position: "is-top",
-          duration: 3000
+          duration: 3000,
+          queue: false
         };
         if (res.data.data.foundNew) {
           toastConf.duration = 5000;
-          toastConf.message += `，检测到新版本: ${res.data.data.remoteVersion}`;
-          toastConf.type = "is-danger";
+          toastConf.message +=
+            ". " +
+            this.$t("welcome.newVersion", {
+              version: res.data.data.remoteVersion
+            });
+          toastConf.type = "is-success";
         }
         this.$buefy.toast.open(toastConf);
         localStorage["docker"] = res.data.data.dockerMode;
         localStorage["version"] = res.data.data.version;
         if (res.data.data.serviceValid === false) {
           this.$buefy.toast.open({
-            message: "检测到v2ray-core可能未正确安装，请检查",
+            message: this.$t("version.v2rayInvalid"),
             type: "is-danger",
             position: "is-top",
-            duration: 5000
+            queue: false,
+            duration: 10000
           });
         } else {
-          localStorage["transparentValid"] = res.data.data.transparentValid;
+          localStorage["iptablesMode"] = res.data.data.iptablesMode;
           localStorage["dohValid"] = res.data.data.dohValid;
-          if (
-            typeof res.data.data.transparentValid == "boolean" && //兼容旧版本
-            res.data.data.transparentValid === false
-          ) {
-            this.$buefy.toast.open({
-              message: "检测到v2ray-core版本低于4.19.1，不支持全局透明代理",
-              type: "is-warning",
-              position: "is-top",
-              duration: 3000
-            });
-          }
-          if (
-            typeof res.data.data.transparentValid === "string" && //新版本
-            res.data.data.transparentValid !== "yes"
-          ) {
-            this.$buefy.toast.open({
-              message: "不支持全局透明代理: " + res.data.data.transparentValid,
-              type: "is-warning",
-              position: "is-top",
-              duration: 3000
-            });
-          }
+          localStorage["vlessValid"] = !!res.data.data.vlessValid;
         }
       }
     });
   },
   methods: {
+    handleClickLang(lang) {
+      localStorage["_lang"] = lang;
+      location.reload();
+    },
     handleOnStatusMouseEnter() {
-      if (this.runningState.running === CONST.IS_RUNNING) {
-        this.coverStatusText = "　关闭　";
-      } else if (this.runningState.running === CONST.NOT_RUNNING) {
-        this.coverStatusText = "　启动　";
+      if (this.runningState.running === this.$t("common.isRunning")) {
+        this.coverStatusText = "　" + this.$t("v2ray.stop") + "　";
+      } else if (this.runningState.running === this.$t("common.notRunning")) {
+        this.coverStatusText = "　" + this.$t("v2ray.start") + "　";
       }
     },
     handleOnStatusMouseLeave() {
@@ -212,26 +223,16 @@
         content: `
 <div class="modal-card" style="margin:auto">
                     <header class="modal-card-head">
-                        <p class="modal-card-title">mzz2017 / V2RayA</p>
+                        <p class="modal-card-title">mzz2017 / v2rayA</p>
                     </header>
                     <section class="modal-card-body lazy">
-                        <p>V2RayA是V2Ray的一个Web客户端，前端使用Vue.js构建，后端使用Golang构建。</p>
-                        <p style="font-size:0.85em;text-indent:1em;color:rgba(0,0,0,0.6)">默认端口：</p>
-                        <p style="font-size:0.85em;text-indent:1em;color:rgba(0,0,0,0.6)">2017: V2RayA后端端口</p>
-                        <p style="font-size:0.85em;text-indent:1em;color:rgba(0,0,0,0.6)">20170: SOCKS协议</p>
-                        <p style="font-size:0.85em;text-indent:1em;color:rgba(0,0,0,0.6)">20171: HTTP协议</p>
-                        <p style="font-size:0.85em;text-indent:1em;color:rgba(0,0,0,0.6)">20172: 带PAC的HTTP协议</p>
-                        <p style="font-size:0.85em;text-indent:1em;color:rgba(0,0,0,0.6)">其他端口：</p>
-                        <p style="font-size:0.85em;text-indent:1em;color:rgba(0,0,0,0.6)">12345: tproxy （全局透明代理所需）</p>
-                        <p style="font-size:0.85em;text-indent:1em;color:rgba(0,0,0,0.6)">12346: ssr server （SS、SSR所需）</p>
-                        <p>应用不会将任何用户数据保存在云端，所有用户数据存放在用户本地配置文件中。若服务端运行于docker，则当docker容器被清除时配置也将随之消失，请做好备份。</p>
-                        <p>在使用中如果发现任何问题，欢迎<a href="https://github.com/mzz2017/V2RayA/issues">提出issue</a>。</p>
+                        ${this.$t(`about`)}
                     </section>
                     <footer class="modal-card-foot">
-                        <a class="is-link" href="https://github.com/mzz2017/V2RayA" target="_blank">
-                          <img class="leave-right" src="https://img.shields.io/github/stars/mzz2017/V2RayA.svg?style=social" alt="stars">
-                          <img class="leave-right" src="https://img.shields.io/github/forks/mzz2017/V2RayA.svg?style=social" alt="forks">
-                          <img class="leave-right" src="https://img.shields.io/github/watchers/mzz2017/V2RayA.svg?style=social" alt="watchers">
+                        <a class="is-link" href="https://github.com/v2rayA/v2rayA" target="_blank">
+                          <img class="leave-right" src="https://img.shields.io/github/stars/mzz2017/v2rayA.svg?style=social" alt="stars">
+                          <img class="leave-right" src="https://img.shields.io/github/forks/mzz2017/v2rayA.svg?style=social" alt="forks">
+                          <img class="leave-right" src="https://img.shields.io/github/watchers/mzz2017/v2rayA.svg?style=social" alt="watchers">
                         </a>
                     </footer>
                 </div>
@@ -239,33 +240,43 @@
       });
     },
     handleClickStatus() {
-      if (this.runningState.running === CONST.NOT_RUNNING) {
-        this.$axios({
-          url: apiRoot + "/v2ray",
-          method: "post"
-        }).then(res => {
-          if (res.data.code === "SUCCESS") {
-            Object.assign(this.runningState, {
-              running: CONST.IS_RUNNING,
-              connectedServer: res.data.data.connectedServer,
-              lastConnectedServer: null
-            });
-          } else {
-            this.$buefy.toast.open({
-              message: res.data.message,
-              type: "is-warning",
-              position: "is-top"
-            });
-          }
-        });
-      } else if (this.runningState.running === CONST.IS_RUNNING) {
+      if (this.runningState.running === this.$t("common.notRunning")) {
+        let cancel;
+        waitingConnected(
+          this.$axios({
+            url: apiRoot + "/v2ray",
+            method: "post",
+            cancelToken: new axios.CancelToken(function executor(c) {
+              cancel = c;
+            })
+          }).then(res => {
+            if (res.data.code === "SUCCESS") {
+              Object.assign(this.runningState, {
+                running: this.$t("common.isRunning"),
+                connectedServer: res.data.data.connectedServer,
+                lastConnectedServer: null
+              });
+            } else {
+              this.$buefy.toast.open({
+                message: res.data.message,
+                type: "is-warning",
+                duration: 5000,
+                position: "is-top",
+                queue: false
+              });
+            }
+          }),
+          3 * 1000,
+          cancel
+        );
+      } else if (this.runningState.running === this.$t("common.isRunning")) {
         this.$axios({
           url: apiRoot + "/v2ray",
           method: "delete"
         }).then(res => {
           if (res.data.code === "SUCCESS") {
             Object.assign(this.runningState, {
-              running: CONST.NOT_RUNNING,
+              running: this.$t("common.notRunning"),
               connectedServer: null,
               lastConnectedServer: res.data.data.lastConnectedServer
             });
@@ -274,7 +285,9 @@
             this.$buefy.toast.open({
               message: res.data.message,
               type: "is-warning",
-              position: "is-top"
+              duration: 5000,
+              position: "is-top",
+              queue: false
             });
           }
         });
@@ -282,14 +295,13 @@
     },
     handleClickLogout() {
       localStorage.removeItem("token");
-      window.location.reload();
+      this.$remount();
     }
   }
 };
 </script>
 
 <style lang="scss">
-//TODO: 缓冲css到本地
 @import "assets/iconfont/fonts/font.css";
 @import "assets/scss/reset.scss";
 </style>
@@ -320,10 +332,10 @@
 
 <style lang="scss">
 html {
-//  &::-webkit-scrollbar {
-//    // 去掉讨厌的滚动条
-//    display: none;
-//  }
+  //  &::-webkit-scrollbar {
+  //    // 去掉讨厌的滚动条
+  //    display: none;
+  //  }
 
   #app {
     height: calc(100vh - 3.25rem);
@@ -394,5 +406,10 @@ a {
   p {
     margin-bottom: 0.5em;
   }
+}
+.about-small {
+  font-size: 0.85em;
+  text-indent: 1em;
+  color: rgba(0, 0, 0, 0.6);
 }
 </style>

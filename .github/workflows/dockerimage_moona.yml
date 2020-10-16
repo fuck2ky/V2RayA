@@ -1,0 +1,26 @@
+name: moona
+
+on:
+  push:
+    tags:
+      - v*
+
+env:
+  DOCKER_CLI_EXPERIMENTAL: enabled
+  DOCKER_BUILDKIT: 1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: crazy-max/ghaction-docker-buildx@v1
+        with:
+          buildx-version: latest
+          qemu-version: latest
+      - name: Build the Docker image
+        run: |
+          docker login -u ${{secrets.DOCKER_USERNAME}} -p ${{secrets.DOCKER_PASSWORD}}
+          docker buildx build -t mzz2017/moona:latest -f Dockerfile.moona --platform=linux/arm,linux/arm64,linux/amd64 . --push

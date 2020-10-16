@@ -10,9 +10,9 @@
 package socks5
 
 import (
-	"V2RayA/extra/proxy"
-	"errors"
 	"github.com/mzz2017/shadowsocksR/tools/leakybuf"
+	"github.com/v2rayA/v2rayA/extra/proxy"
+	"github.com/v2rayA/v2rayA/global"
 	"github.com/nadoo/glider/common/socks"
 	"io"
 	"log"
@@ -80,12 +80,16 @@ func (s *Socks5) ListenAndServe() error {
 func (s *Socks5) ListenAndServeTCP() error {
 	l, err := net.Listen("tcp", s.addr)
 	if err != nil {
-		log.Printf("[socks5] failed to listen on %s: %v\n", s.addr, err)
+		if global.IsDebug() {
+			log.Printf("[socks5] failed to listen on %s: %v\n", s.addr, err)
+		}
 		return err
 	}
 	s.TcpListener = l
 
-	log.Printf("[socks5] listening TCP on %s\n", s.addr)
+	if global.IsDebug() {
+		log.Printf("[socks5] listening TCP on %s\n", s.addr)
+	}
 
 	for {
 		c, err := l.Accept()
@@ -93,7 +97,9 @@ func (s *Socks5) ListenAndServeTCP() error {
 			if strings.Contains(err.Error(), "use of closed network connection") {
 				return nil
 			}
-			log.Printf("[socks5] failed to accept: %v\n", err)
+			if global.IsDebug() {
+				log.Printf("[socks5] failed to accept: %v\n", err)
+			}
 			continue
 		}
 
@@ -102,21 +108,19 @@ func (s *Socks5) ListenAndServeTCP() error {
 }
 
 // Serve serves a connection.
-func (s *Socks5) Serve(cc net.Conn) {
-	defer cc.Close()
+func (s *Socks5) Serve(c net.Conn) {
+	defer c.Close()
 
-	var c net.Conn
-	switch ccc := cc.(type) {
-	case *net.TCPConn:
-		ccc.SetKeepAlive(true)
-		c = ccc
+	if c, ok := c.(*net.TCPConn); ok {
+		c.SetKeepAlive(true)
 	}
 
 	tgt, err := s.handshake(c)
 	if err != nil {
 		// UDP: keep the connection until disconnect then free the UDP socket
 		if err == socks.Errors[9] {
-			buf := make([]byte, 1)
+			buf := leakybuf.GlobalLeakyBuf.Get()
+			defer leakybuf.GlobalLeakyBuf.Put(buf)
 			// block here
 			for {
 				_, err := c.Read(buf)
@@ -128,71 +132,60 @@ func (s *Socks5) Serve(cc net.Conn) {
 			}
 		}
 
-		log.Printf("[socks5] failed in handshake with %s: %v\n", c.RemoteAddr(), err)
+		if global.IsDebug() {
+			log.Printf("[socks5] failed in handshake with %s: %v", c.RemoteAddr(), err)
+		}
 		return
 	}
 
-	rc, p, err := s.proxy.Dial("tcp", tgt.String())
+	rc, dialer, err := s.proxy.Dial("tcp", tgt.String())
 	if err != nil {
-		log.Printf("[socks5] %s <-> %s via %s, error in dial: %v\n", c.RemoteAddr(), tgt, p, err)
+		if global.IsDebug() {
+			log.Printf("[socks5] %s <-> %s via %s, error in dial: %v", c.RemoteAddr(), tgt, dialer, err)
+		}
 		return
 	}
 	defer rc.Close()
 
-	log.Printf("[socks5] %s <-> %s via %s\n", c.RemoteAddr(), tgt, p)
-	err = Relay(c, rc)
-	//log.Printf("[socks5] %s <-> %s via %s, [over]", c.RemoteAddr(), tgt, p)
+	if global.IsDebug() {
+		log.Printf("[socks5] %s <-> %s via %s", c.RemoteAddr(), tgt, dialer)
+	}
+
+	_, _, err = Relay(c, rc)
 	if err != nil {
 		if err, ok := err.(net.Error); ok && err.Timeout() {
 			return // ignore i/o timeout
 		}
-		log.Printf("[socks5] relay error: %v\n", err)
-	}
-}
-func Relay(src, dst net.Conn) error {
-	errc := make(chan error, 2)
-	done := make(chan struct{})
-	go func() {
-		err := Pipe(src, dst)
-		if err != nil {
-			errc <- err
+		if global.IsDebug() {
+			log.Printf("[socks5] relay error: %v", err)
 		}
-		done <- struct{}{}
-	}()
-	err := Pipe(dst, src)
-	if err != nil {
-		errc <- err
 	}
-	<-done
-	if len(errc) == 0 {
-		errc <- nil
-	}
-	return <-errc
 }
 
-// PipeThenClose copies data from src to dst, closes dst when done.
-func Pipe(src, dst net.Conn) error {
-	buf := leakybuf.GlobalLeakyBuf.Get()
-	for {
-		src.SetReadDeadline(time.Now().Add(4 * time.Second))
-		n, err := src.Read(buf)
-		// read may return EOF with n > 0
-		// should always process n > 0 bytes before handling error
-		if n > 0 {
-			// Note: avoid overwrite err returned by Read.
-			if _, err := dst.Write(buf[0:n]); err != nil {
-				break
-			}
-		}
-		if err != nil {
-			// Always "use of closed network connection", but no easy way to
-			// identify this specific error. So just leave the error along for now.
-			// More info here: https://code.google.com/p/go/issues/detail?id=4373
-			break
-		}
+// Relay relays between left and right.
+func Relay(left, right net.Conn) (int64, int64, error) {
+	type res struct {
+		N   int64
+		Err error
 	}
-	leakybuf.GlobalLeakyBuf.Put(buf)
-	return nil
+	ch := make(chan res)
+
+	go func() {
+		n, err := io.Copy(right, left)
+		right.SetDeadline(time.Now()) // wake up the other goroutine blocking on right
+		left.SetDeadline(time.Now())  // wake up the other goroutine blocking on left
+		ch <- res{n, err}
+	}()
+
+	n, err := io.Copy(left, right)
+	right.SetDeadline(time.Now()) // wake up the other goroutine blocking on right
+	left.SetDeadline(time.Now())  // wake up the other goroutine blocking on left
+	rs := <-ch
+
+	if err == nil {
+		err = rs.Err
+	}
+	return n, rs.N, err
 }
 
 // Addr returns forwarder's address.
@@ -208,12 +201,14 @@ func (s *Socks5) Dial(network, addr string) (net.Conn, error) {
 	switch network {
 	case "tcp", "tcp6", "tcp4":
 	default:
-		return nil, errors.New("[socks5]: no support for connection type " + network)
+		return nil, newError("[socks5]: no support for connection type " + network)
 	}
 
 	c, err := s.dialer.Dial(network, s.addr)
 	if err != nil {
-		log.Printf("[socks5]: dial to %s error: %s\n", s.addr, err)
+		if global.IsDebug() {
+			log.Printf("[socks5]: dial to %s error: %s\n", s.addr, err)
+		}
 		return nil, err
 	}
 
@@ -229,7 +224,9 @@ func (s *Socks5) Dial(network, addr string) (net.Conn, error) {
 func (s *Socks5) DialUDP(network, addr string) (pc net.PacketConn, writeTo net.Addr, err error) {
 	c, err := s.dialer.Dial("tcp", s.addr)
 	if err != nil {
-		log.Printf("[socks5] dialudp dial tcp to %s error: %s\n", s.addr, err)
+		if global.IsDebug() {
+			log.Printf("[socks5] dialudp dial tcp to %s error: %s\n", s.addr, err)
+		}
 		return nil, nil, err
 	}
 
@@ -253,8 +250,10 @@ func (s *Socks5) DialUDP(network, addr string) (pc net.PacketConn, writeTo net.A
 
 	rep := buf[1]
 	if rep != 0 {
-		log.Printf("[socks5] server reply: %d, not succeeded\n", rep)
-		return nil, nil, errors.New("server connect failed")
+		if global.IsDebug() {
+			log.Printf("[socks5] server reply: %d, not succeeded\n", rep)
+		}
+		return nil, nil, newError("server connect failed")
 	}
 
 	uAddr, err := socks.ReadAddrBuf(c, buf)
@@ -264,7 +263,9 @@ func (s *Socks5) DialUDP(network, addr string) (pc net.PacketConn, writeTo net.A
 
 	pc, nextHop, err := s.dialer.DialUDP(network, uAddr.String())
 	if err != nil {
-		log.Printf("[socks5] dialudp to %s error: %s\n", uAddr.String(), err)
+		if global.IsDebug() {
+			log.Printf("[socks5] dialudp to %s error: %s\n", uAddr.String(), err)
+		}
 		return nil, nil, err
 	}
 
@@ -283,10 +284,10 @@ func (s *Socks5) connect(conn net.Conn, target string) error {
 
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		return errors.New("proxy: failed to parse port number: " + portStr)
+		return newError("proxy: failed to parse port number: " + portStr)
 	}
 	if port < 1 || port > 0xffff {
-		return errors.New("proxy: port number out of range: " + portStr)
+		return newError("proxy: port number out of range: " + portStr)
 	}
 
 	// the size here is just an estimate
@@ -300,17 +301,17 @@ func (s *Socks5) connect(conn net.Conn, target string) error {
 	}
 
 	if _, err := conn.Write(buf); err != nil {
-		return errors.New("proxy: failed to write greeting to SOCKS5 proxy at " + s.addr + ": " + err.Error())
+		return newError("proxy: failed to write greeting to SOCKS5 proxy at " + s.addr).Base(err)
 	}
 
 	if _, err := io.ReadFull(conn, buf[:2]); err != nil {
-		return errors.New("proxy: failed to read greeting from SOCKS5 proxy at " + s.addr + ": " + err.Error())
+		return newError("proxy: failed to read greeting from SOCKS5 proxy at " + s.addr).Base(err)
 	}
 	if buf[0] != Version {
-		return errors.New("proxy: SOCKS5 proxy at " + s.addr + " has unexpected version " + strconv.Itoa(int(buf[0])))
+		return newError("proxy: SOCKS5 proxy at " + s.addr + " has unexpected version " + strconv.Itoa(int(buf[0])))
 	}
 	if buf[1] == 0xff {
-		return errors.New("proxy: SOCKS5 proxy at " + s.addr + " requires authentication")
+		return newError("proxy: SOCKS5 proxy at " + s.addr + " requires authentication")
 	}
 
 	if buf[1] == socks.AuthPassword {
@@ -322,15 +323,15 @@ func (s *Socks5) connect(conn net.Conn, target string) error {
 		buf = append(buf, s.password...)
 
 		if _, err := conn.Write(buf); err != nil {
-			return errors.New("proxy: failed to write authentication request to SOCKS5 proxy at " + s.addr + ": " + err.Error())
+			return newError("proxy: failed to write authentication request to SOCKS5 proxy at " + s.addr).Base(err)
 		}
 
 		if _, err := io.ReadFull(conn, buf[:2]); err != nil {
-			return errors.New("proxy: failed to read authentication reply from SOCKS5 proxy at " + s.addr + ": " + err.Error())
+			return newError("proxy: failed to read authentication reply from SOCKS5 proxy at " + s.addr).Base(err)
 		}
 
 		if buf[1] != 0 {
-			return errors.New("proxy: SOCKS5 proxy at " + s.addr + " rejected username/password")
+			return newError("proxy: SOCKS5 proxy at " + s.addr + " rejected username/password")
 		}
 	}
 
@@ -347,7 +348,7 @@ func (s *Socks5) connect(conn net.Conn, target string) error {
 		buf = append(buf, ip...)
 	} else {
 		if len(host) > 255 {
-			return errors.New("proxy: destination hostname too long: " + host)
+			return newError("proxy: destination hostname too long: " + host)
 		}
 		buf = append(buf, socks.ATypDomain)
 		buf = append(buf, byte(len(host)))
@@ -356,11 +357,11 @@ func (s *Socks5) connect(conn net.Conn, target string) error {
 	buf = append(buf, byte(port>>8), byte(port))
 
 	if _, err := conn.Write(buf); err != nil {
-		return errors.New("proxy: failed to write connect request to SOCKS5 proxy at " + s.addr + ": " + err.Error())
+		return newError("proxy: failed to write connect request to SOCKS5 proxy at " + s.addr).Base(err)
 	}
 
 	if _, err := io.ReadFull(conn, buf[:4]); err != nil {
-		return errors.New("proxy: failed to read connect reply from SOCKS5 proxy at " + s.addr + ": " + err.Error())
+		return newError("proxy: failed to read connect reply from SOCKS5 proxy at " + s.addr).Base(err)
 	}
 
 	failure := "unknown error"
@@ -369,7 +370,7 @@ func (s *Socks5) connect(conn net.Conn, target string) error {
 	}
 
 	if len(failure) > 0 {
-		return errors.New("proxy: SOCKS5 proxy at " + s.addr + " failed to connect: " + failure)
+		return newError("proxy: SOCKS5 proxy at " + s.addr + " failed to connect: " + failure)
 	}
 
 	bytesToDiscard := 0
@@ -381,11 +382,11 @@ func (s *Socks5) connect(conn net.Conn, target string) error {
 	case socks.ATypDomain:
 		_, err := io.ReadFull(conn, buf[:1])
 		if err != nil {
-			return errors.New("proxy: failed to read domain length from SOCKS5 proxy at " + s.addr + ": " + err.Error())
+			return newError("proxy: failed to read domain length from SOCKS5 proxy at " + s.addr).Base(err)
 		}
 		bytesToDiscard = int(buf[0])
 	default:
-		return errors.New("proxy: got unknown address type " + strconv.Itoa(int(buf[3])) + " from SOCKS5 proxy at " + s.addr)
+		return newError("proxy: got unknown address type " + strconv.Itoa(int(buf[3])) + " from SOCKS5 proxy at " + s.addr)
 	}
 
 	if cap(buf) < bytesToDiscard {
@@ -394,12 +395,12 @@ func (s *Socks5) connect(conn net.Conn, target string) error {
 		buf = buf[:bytesToDiscard]
 	}
 	if _, err := io.ReadFull(conn, buf); err != nil {
-		return errors.New("proxy: failed to read address from SOCKS5 proxy at " + s.addr + ": " + err.Error())
+		return newError("proxy: failed to read address from SOCKS5 proxy at " + s.addr).Base(err)
 	}
 
 	// Also need to discard the port number
 	if _, err := io.ReadFull(conn, buf[:2]); err != nil {
-		return errors.New("proxy: failed to read port from SOCKS5 proxy at " + s.addr + ": " + err.Error())
+		return newError("proxy: failed to read port from SOCKS5 proxy at " + s.addr).Base(err)
 	}
 
 	return nil
@@ -435,29 +436,29 @@ func (s *Socks5) handshake(rw io.ReadWriter) (socks.Addr, error) {
 		userLen := int(buf[1])
 		if userLen <= 0 {
 			rw.Write([]byte{1, 1})
-			return nil, errors.New("auth failed: wrong username length")
+			return nil, newError("auth failed: wrong username length")
 		}
 
 		if _, err := io.ReadFull(rw, buf[:userLen]); err != nil {
-			return nil, errors.New("auth failed: cannot get username")
+			return nil, newError("auth failed: cannot get username")
 		}
 		user := string(buf[:userLen])
 
 		// Get password
 		_, err = rw.Read(buf[:1])
 		if err != nil {
-			return nil, errors.New("auth failed: cannot get password len")
+			return nil, newError("auth failed: cannot get password len")
 		}
 
 		passLen := int(buf[0])
 		if passLen <= 0 {
 			rw.Write([]byte{1, 1})
-			return nil, errors.New("auth failed: wrong password length")
+			return nil, newError("auth failed: wrong password length")
 		}
 
 		_, err = io.ReadFull(rw, buf[:passLen])
 		if err != nil {
-			return nil, errors.New("auth failed: cannot get password")
+			return nil, newError("auth failed: cannot get password")
 		}
 		pass := string(buf[:passLen])
 
@@ -467,7 +468,7 @@ func (s *Socks5) handshake(rw io.ReadWriter) (socks.Addr, error) {
 			if err != nil {
 				return nil, err
 			}
-			return nil, errors.New("auth failed, authinfo: " + user + ":" + pass)
+			return nil, newError("auth failed, authinfo: " + user + ":" + pass)
 		}
 
 		// Response auth state

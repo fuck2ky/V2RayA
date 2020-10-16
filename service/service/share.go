@@ -1,19 +1,18 @@
 package service
 
 import (
-	"V2RayA/persistence/configure"
-	"errors"
+	"github.com/v2rayA/v2rayA/db/configure"
 )
 
 func GetSharingAddress(w *configure.Which) (addr string, err error) {
 	if w == nil {
-		return "", errors.New("which不能为nil")
+		return "", newError("which can not be nil")
 	}
 	subscriptions := configure.GetSubscriptions()
 	if w.TYPE == configure.SubscriptionType {
 		ind := w.ID - 1
 		if ind < 0 || ind >= len(subscriptions) {
-			return "", errors.New("id超出范围")
+			return "", newError("id exceed range")
 		}
 		addr = subscriptions[ind].Address
 	} else {
@@ -24,7 +23,7 @@ func GetSharingAddress(w *configure.Which) (addr string, err error) {
 		}
 		addr = tsr.VmessInfo.ExportToURL()
 		if addr == "" {
-			return "", errors.New("生成地址时发生错误")
+			return "", newError("an error occurred while generating the address")
 		}
 	}
 	return

@@ -1,10 +1,9 @@
 package controller
 
 import (
-	"V2RayA/persistence/configure"
-	"V2RayA/service"
-	"V2RayA/tools"
-	"errors"
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -12,24 +11,24 @@ func PostConnection(ctx *gin.Context) {
 	var which configure.Which
 	err := ctx.ShouldBindJSON(&which)
 	if err != nil {
-		tools.ResponseError(ctx, errors.New("参数有误"))
+		common.ResponseError(ctx, logError(nil, "bad request"))
 		return
 	}
 	lastConnectedServer := configure.GetConnectedServer()
 	err = service.Connect(&which)
 	if err != nil {
-		tools.ResponseError(ctx, errors.New("连接失败："+err.Error()))
+		common.ResponseError(ctx, logError(err, "failed to connect"))
 		return
 	}
-	tools.ResponseSuccess(ctx, gin.H{"connectedServer": configure.GetConnectedServer(), "lastConnectedServer": lastConnectedServer})
+	common.ResponseSuccess(ctx, gin.H{"connectedServer": configure.GetConnectedServer(), "lastConnectedServer": lastConnectedServer})
 }
 
 func DeleteConnection(ctx *gin.Context) {
 	cs := configure.GetConnectedServer()
 	err := service.Disconnect()
 	if err != nil {
-		tools.ResponseError(ctx, err)
+		common.ResponseError(ctx, logError(err))
 		return
 	}
-	tools.ResponseSuccess(ctx, gin.H{"lastConnectedServer": cs})
+	common.ResponseSuccess(ctx, gin.H{"lastConnectedServer": cs})
 }

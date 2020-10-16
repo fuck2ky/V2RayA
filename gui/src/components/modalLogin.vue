@@ -2,28 +2,32 @@
   <div class="modal-card" style="max-width: 450px;margin:auto">
     <header class="modal-card-head">
       <p class="modal-card-title">
-        {{ first ? "初来乍到，创建一个管理员账号" : "登陆 - V2rayA" }}
+        {{ first ? $t("register.title") : `${$t("login.title")} - v2rayA` }}
       </p>
     </header>
     <section class="modal-card-body">
       <p style="text-align: center">
-        <img src="../assets/logo2.png" alt="V2RayA" />
+        <img src="../assets/logo2.png" alt="v2rayA" />
       </p>
-      <b-field label="Username" type="is-success">
-        <b-input v-model="username" @keyup.enter.native="handleEnter"></b-input>
+      <b-field :label="$t('login.username')" type="is-success">
+        <b-input
+          ref="username"
+          v-model="username"
+          @keyup.enter.native="handleEnter"
+        ></b-input>
       </b-field>
-      <b-field label="Password" type="is-success">
+      <b-field :label="$t('login.password')" type="is-success">
         <b-input
           v-model="password"
           type="password"
-          maxlength="32"
+          :maxlength="first ? '32' : ''"
           @keyup.enter.native="handleEnter"
         ></b-input>
       </b-field>
       <b-message v-if="first" type="is-info" class="after-line-dot5">
-        <p>请记住您创建的管理员账号，用于登录该管理页面。</p>
-        <p>账号信息位于本地，我们不会上传任何信息到服务器。</p>
-        <p>如不慎忘记密码，可通过清除配置文件重置。</p>
+        <p>{{ $t("register.messages.0") }}</p>
+        <p>{{ $t("register.messages.1") }}</p>
+        <p>{{ $t("register.messages.2") }}</p>
       </b-message>
     </section>
     <footer class="modal-card-foot flex-end">
@@ -31,7 +35,7 @@
         :class="{ 'is-primary': !first, 'is-twitter': first }"
         @click="handleClickSubmit"
       >
-        {{ first ? "创建" : "登陆" }}
+        {{ first ? $t("operations.create") : $t("operations.login") }}
       </b-button>
     </footer>
   </div>
@@ -39,8 +43,10 @@
 
 <script>
 import { handleResponse } from "../assets/js/utils";
+import i18n from "@/plugins/i18n";
 
 export default {
+  i18n,
   name: "ModalLogin",
   props: {
     first: {
@@ -52,6 +58,9 @@ export default {
     username: "",
     password: ""
   }),
+  mounted() {
+    this.$refs.username.focus();
+  },
   methods: {
     handleClickSubmit() {
       const that = this;
@@ -68,7 +77,7 @@ export default {
           handleResponse(res, this, () => {
             localStorage["token"] = res.data.data.token;
             this.$emit("close");
-            window.location.reload();
+            this.$remount();
           });
         });
       } else {
@@ -84,7 +93,7 @@ export default {
           handleResponse(res, this, () => {
             localStorage["token"] = res.data.data.token;
             this.$emit("close");
-            window.location.reload();
+            this.$remount();
           });
         });
       }

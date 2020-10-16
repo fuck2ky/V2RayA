@@ -1,48 +1,37 @@
 package controller
 
 import (
-	"V2RayA/global"
-	"V2RayA/model/v2ray"
-	"V2RayA/persistence/configure"
-	"V2RayA/service"
-	"V2RayA/tools"
-	"errors"
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/core/v2ray"
+	"github.com/v2rayA/v2rayA/global"
+	"github.com/v2rayA/v2rayA/db/configure"
 	"github.com/gin-gonic/gin"
 )
 
 func PostV2ray(ctx *gin.Context) {
 	cs := configure.GetConnectedServer()
 	if cs == nil {
-		tools.ResponseError(ctx, errors.New("不能启动V2Ray, 请选择一个节点连接"))
-		return
-	}
-	err := service.CheckAndSetupTransparentProxy(false)
-	if err != nil {
+		common.ResponseError(ctx, logError(nil, "cannot start V2Ray without server connected"))
 		return
 	}
 	csr, err := cs.LocateServer()
 	if err != nil {
 		return
 	}
-	err = v2ray.UpdateV2RayConfigAndRestart(&csr.VmessInfo)
+	err = v2ray.UpdateV2RayConfig(&csr.VmessInfo)
 	if err != nil {
-		tools.ResponseError(ctx, err)
+		common.ResponseError(ctx, logError(err))
 		return
 	}
-	tools.ResponseSuccess(ctx, gin.H{"connectedServer": cs})
+	common.ResponseSuccess(ctx, gin.H{"connectedServer": cs})
 }
 
 func DeleteV2ray(ctx *gin.Context) {
-	if global.ServiceControlMode == global.DockerMode {
-		tools.ResponseError(ctx, errors.New("Docker模式下无法关闭V2Ray，但可以断开节点连接"))
-		return
-	}
-	_ = service.CheckAndStopTransparentProxy()
 	err := v2ray.StopAndDisableV2rayService()
 	if err != nil {
-		tools.ResponseError(ctx, err)
+		common.ResponseError(ctx, logError(err))
 		return
 	}
-	global.SSRs.ClearAll()
-	tools.ResponseSuccess(ctx, gin.H{"lastConnectedServer": configure.GetConnectedServer()})
+	global.Plugins.CloseAll()
+	common.ResponseSuccess(ctx, gin.H{"lastConnectedServer": configure.GetConnectedServer()})
 }

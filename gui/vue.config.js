@@ -2,11 +2,28 @@ var webpack = require("webpack");
 var path = require("path");
 var WebpackIconfontPluginNodejs = require("webpack-iconfont-plugin-nodejs");
 var dir = "src/assets/iconfont";
+var UglifyJsPlugin = require("uglifyjs-webpack-plugin");
 
 module.exports = {
   configureWebpack: config => {
     config.resolve.alias["vue$"] = "vue/dist/vue.esm.js";
     return {
+      optimization: {
+        minimizer: [
+          new UglifyJsPlugin({
+            uglifyOptions: {
+              output: {
+                beautify: false
+              },
+              compress: {
+                warnings: false,
+                drop_console: true
+              },
+              sourceMap: false
+            }
+          })
+        ]
+      },
       plugins: [
         new webpack.DefinePlugin({
           apiRoot: '`${localStorage["backendAddress"]}/api`'
@@ -32,13 +49,13 @@ module.exports = {
   },
 
   // publicPath:process.env.NODE_ENV === 'production'
-  // ? '/V2RayA/'
+  // ? '/v2rayA/'
   // : '/',
   outputDir: "../web",
 
   pwa: {
-    name: "V2RayA",
-    themeColor: "#FFDD57",
+    name: "v2rayA",
+    // themeColor: "#FFDD57",
     msTileColor: "#fff",
     appleMobileWebAppCapable: "yes",
     appleMobileWebAppStatusBarStyle: "white",
@@ -47,5 +64,7 @@ module.exports = {
     }
   },
 
-  lintOnSave: false
+  lintOnSave: false,
+
+  transpileDependencies: ["buefy"]
 };

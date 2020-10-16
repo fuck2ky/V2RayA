@@ -1,470 +1,599 @@
 #!/bin/bash
 
-# This file is accessible as https://install.direct/go.sh
-# Original source is located at github.com/v2ray/v2ray-core/release/install-release.sh
+# The files installed by the script conform to the Filesystem Hierarchy Standard:
+# https://wiki.linuxfoundation.org/lsb/fhs
 
-# If not specify, default meaning of return value:
-# 0: Success
-# 1: System error
-# 2: Application error
-# 3: Network error
+# The URL of the script project is:
+# https://github.com/v2fly/fhs-install-v2ray
 
-CUR_VER=""
-NEW_VER=""
-ARCH=""
-VDIS="64"
-ZIPFILE="/tmp/v2ray/v2ray.zip"
-V2RAY_RUNNING=0
-VSRC_ROOT="/tmp/v2ray"
-EXTRACT_ONLY=0
-ERROR_IF_UPTODATE=0
-DIST_SRC="github"
+# The URL of the script is:
+# https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh
 
-CMD_INSTALL=""
-CMD_UPDATE=""
-SOFTWARE_UPDATED=0
+# If the script executes incorrectly, go to:
+# https://github.com/v2fly/fhs-install-v2ray/issues
 
-SYSTEMCTL_CMD=$(command -v systemctl 2>/dev/null)
-SERVICE_CMD=$(command -v service 2>/dev/null)
+# You can set this variable whatever you want in shell session right before running this script by issuing:
+# export DAT_PATH='/usr/local/share/v2ray'
+DAT_PATH=${DAT_PATH:-/usr/local/share/v2ray}
 
-CHECK=""
-FORCE=""
-HELP=""
+# You can set this variable whatever you want in shell session right before running this script by issuing:
+# export JSON_PATH='/usr/local/etc/v2ray'
+JSON_PATH=${JSON_PATH:-/usr/local/etc/v2ray}
 
-#######color code########
-RED="31m"      # Error message
-GREEN="32m"    # Success message
-YELLOW="33m"   # Warning message
-BLUE="36m"     # Info message
+# Set this variable only if you are starting v2ray with multiple configuration files:
+# export JSONS_PATH='/usr/local/etc/v2ray'
 
+# Set this variable only if you want this script to check all the systemd unit file:
+# export check_all_service_files='yes'
 
-#########################
-while [[ $# > 0 ]];do
-    key="$1"
-    case $key in
-        -p|--proxy)
-        PROXY="-x ${2}"
-        shift # past argument
+curl() {
+  $(type -P curl) -L -q --retry 5 --retry-delay 10 --retry-max-time 60 "$@"
+}
+
+systemd_cat_config() {
+  if systemd-analyze --help | grep -qw 'cat-config'; then
+    systemd-analyze --no-pager cat-config "$@"
+  else
+    echo "${aoi}~~~~~~~~~~~~~~~~"
+    cat "$@" "$1".d/*
+    echo "${aoi}~~~~~~~~~~~~~~~~"
+    echo "${red}warning: ${green}The systemd version on the current operating system is too low."
+    echo "${red}warning: ${green}Please consider to upgrade the systemd or the operating system.${reset}"
+  fi
+}
+
+check_if_running_as_root() {
+  # If you want to run as another user, please modify $UID to be owned by this user
+  if [[ "$UID" -ne '0' ]]; then
+    echo "error: You must run this script as root!"
+    exit 1
+  fi
+}
+
+identify_the_operating_system_and_architecture() {
+  if [[ "$(uname)" == 'Linux' ]]; then
+    case "$(uname -m)" in
+      'i386' | 'i686')
+        MACHINE='32'
         ;;
-        -h|--help)
-        HELP="1"
+      'amd64' | 'x86_64')
+        MACHINE='64'
         ;;
-        -f|--force)
-        FORCE="1"
+      'armv5tel')
+        MACHINE='arm32-v5'
         ;;
-        -c|--check)
-        CHECK="1"
+      'armv6l')
+        MACHINE='arm32-v6'
         ;;
-        --remove)
-        REMOVE="1"
+      'armv7' | 'armv7l')
+        MACHINE='arm32-v7a'
         ;;
-        --version)
-        VERSION="$2"
-        shift
+      'armv8' | 'aarch64')
+        MACHINE='arm64-v8a'
         ;;
-        --extract)
-        VSRC_ROOT="$2"
-        shift
+      'mips')
+        MACHINE='mips32'
         ;;
-        --extractonly)
-        EXTRACT_ONLY="1"
+      'mipsle')
+        MACHINE='mips32le'
         ;;
-        -l|--local)
-        LOCAL="$2"
-        LOCAL_INSTALL="1"
-        shift
+      'mips64')
+        MACHINE='mips64'
         ;;
-        --source)
-        DIST_SRC="$2"
-        shift
+      'mips64le')
+        MACHINE='mips64le'
         ;;
-        --errifuptodate)
-        ERROR_IF_UPTODATE="1"
+      'ppc64')
+        MACHINE='ppc64'
         ;;
-        *)
-                # unknown option
+      'ppc64le')
+        MACHINE='ppc64le'
+        ;;
+      'riscv64')
+        MACHINE='riscv64'
+        ;;
+      's390x')
+        MACHINE='s390x'
+        ;;
+      *)
+        echo "error: The architecture is not supported."
+        exit 1
         ;;
     esac
-    shift # past argument or value
-done
-
-###############################
-colorEcho(){
-    COLOR=$1
-    echo -e "\033[${COLOR}${@:2}\033[0m"
-}
-
-sysArch(){
-    ARCH=$(uname -m)
-    if [[ "$ARCH" == "i686" ]] || [[ "$ARCH" == "i386" ]]; then
-        VDIS="32"
-    elif [[ "$ARCH" == *"armv7"* ]] || [[ "$ARCH" == "armv6l" ]]; then
-        VDIS="arm"
-    elif [[ "$ARCH" == *"armv8"* ]] || [[ "$ARCH" == "aarch64" ]]; then
-        VDIS="arm64"
-    elif [[ "$ARCH" == *"mips64le"* ]]; then
-        VDIS="mips64le"
-    elif [[ "$ARCH" == *"mips64"* ]]; then
-        VDIS="mips64"
-    elif [[ "$ARCH" == *"mipsle"* ]]; then
-        VDIS="mipsle"
-    elif [[ "$ARCH" == *"mips"* ]]; then
-        VDIS="mips"
-    elif [[ "$ARCH" == *"s390x"* ]]; then
-        VDIS="s390x"
-    elif [[ "$ARCH" == "ppc64le" ]]; then
-        VDIS="ppc64le"
-    elif [[ "$ARCH" == "ppc64" ]]; then
-        VDIS="ppc64"
+    if [[ ! -f '/etc/os-release' ]]; then
+      echo "error: Don't use outdated Linux distributions."
+      exit 1
     fi
-    return 0
-}
-
-downloadV2Ray(){
-    rm -rf /tmp/v2ray
-    mkdir -p /tmp/v2ray
-    if [[ "${DIST_SRC}" == "jsdelivr" ]]; then
-        DOWNLOAD_LINK="https://cdn.jsdelivr.net/gh/v2ray/dist/v2ray-linux-${VDIS}.zip"
-    elif [[ "${DIST_SRC}" == "ustc" ]]; then
-        DOWNLOAD_LINK="https://mirrors.0diis.com/github/v2ray/v2ray-core/releases/download/${NEW_VER}/v2ray-linux-${VDIS}.zip"
+    # Do not combine this judgment condition with the following judgment condition.
+    ## Be aware of Linux distribution like Gentoo, which kernel supports switch between Systemd and OpenRC.
+    ### Refer: https://github.com/v2fly/fhs-install-v2ray/issues/84#issuecomment-688574989
+    if [[ -f /.dockerenv ]] || grep -q 'docker\|lxc' /proc/1/cgroup && [[ "$(type -P systemctl)" ]]; then
+      true
+    elif [[ -d /run/systemd/system ]] || grep -q systemd <(ls -l /sbin/init); then
+      true
     else
-        DOWNLOAD_LINK="https://github.com/v2ray/v2ray-core/releases/download/${NEW_VER}/v2ray-linux-${VDIS}.zip"
+      echo "error: Only Linux distributions using systemd are supported."
+      exit 1
     fi
-    colorEcho ${BLUE} "Downloading V2Ray: ${DOWNLOAD_LINK}"
-    curl ${PROXY} -L -H "Cache-Control: no-cache" -o ${ZIPFILE} ${DOWNLOAD_LINK}
-    if [ $? != 0 ];then
-        colorEcho ${RED} "Failed to download! Please check your network or try again."
-        return 3
+    if [[ "$(type -P apt)" ]]; then
+      PACKAGE_MANAGEMENT_INSTALL='apt -y --no-install-recommends install'
+      PACKAGE_MANAGEMENT_REMOVE='apt purge'
+      package_provide_tput='ncurses-bin'
+    elif [[ "$(type -P dnf)" ]]; then
+      PACKAGE_MANAGEMENT_INSTALL='dnf -y install'
+      PACKAGE_MANAGEMENT_REMOVE='dnf remove'
+      package_provide_tput='ncurses'
+    elif [[ "$(type -P yum)" ]]; then
+      PACKAGE_MANAGEMENT_INSTALL='yum -y install'
+      PACKAGE_MANAGEMENT_REMOVE='yum remove'
+      package_provide_tput='ncurses'
+    elif [[ "$(type -P zypper)" ]]; then
+      PACKAGE_MANAGEMENT_INSTALL='zypper install -y --no-recommends'
+      PACKAGE_MANAGEMENT_REMOVE='zypper remove'
+      package_provide_tput='ncurses-utils'
+    elif [[ "$(type -P pacman)" ]]; then
+      PACKAGE_MANAGEMENT_INSTALL='pacman -Syu --noconfirm'
+      PACKAGE_MANAGEMENT_REMOVE='pacman -Rsn'
+      package_provide_tput='ncurses'
+    else
+      echo "error: The script does not support the package manager in this operating system."
+      exit 1
     fi
-    return 0
+  else
+    echo "error: This operating system is not supported."
+    exit 1
+  fi
 }
 
-installSoftware(){
-    COMPONENT=$1
-    if [[ -n `command -v $COMPONENT` ]]; then
+## Demo function for processing parameters
+judgment_parameters() {
+  while [[ "$#" -gt '0' ]]; do
+    case "$1" in
+      '--remove')
+        if [[ "$#" -gt '1' ]]; then
+          echo 'error: Please enter the correct parameters.'
+          exit 1
+        fi
+        REMOVE='1'
+        ;;
+      '--version')
+        VERSION="${2:?error: Please specify the correct version.}"
+        break
+        ;;
+      '-c' | '--check')
+        CHECK='1'
+        break
+        ;;
+      '-f' | '--force')
+        FORCE='1'
+        break
+        ;;
+      '-h' | '--help')
+        HELP='1'
+        break
+        ;;
+      '-l' | '--local')
+        LOCAL_INSTALL='1'
+        LOCAL_FILE="${2:?error: Please specify the correct local file.}"
+        break
+        ;;
+      '-p' | '--proxy')
+        if [[ -z "${2:?error: Please specify the proxy server address.}" ]]; then
+          exit 1
+        fi
+        PROXY="$2"
+        shift
+        ;;
+      *)
+        echo "$0: unknown option -- -"
+        exit 1
+        ;;
+    esac
+    shift
+  done
+}
+
+install_software() {
+  package_name="$1"
+  file_to_detect="$2"
+  type -P "$file_to_detect" > /dev/null 2>&1 && return
+  if ${PACKAGE_MANAGEMENT_INSTALL} "$package_name"; then
+    echo "info: $package_name is installed."
+  else
+    echo "error: Installation of $package_name failed, please check your network."
+    exit 1
+  fi
+}
+
+get_version() {
+  # 0: Install or update V2Ray.
+  # 1: Installed or no new version of V2Ray.
+  # 2: Install the specified version of V2Ray.
+  if [[ -n "$VERSION" ]]; then
+    RELEASE_VERSION="v${VERSION#v}"
+    return 2
+  fi
+  # Determine the version number for V2Ray installed from a local file
+  if [[ -f '/usr/local/bin/v2ray' ]]; then
+    VERSION="$(/usr/local/bin/v2ray -version | awk 'NR==1 {print $2}')"
+    CURRENT_VERSION="v${VERSION#v}"
+    if [[ "$LOCAL_INSTALL" -eq '1' ]]; then
+      RELEASE_VERSION="$CURRENT_VERSION"
+      return
+    fi
+  fi
+  # Get V2Ray release version number
+  TMP_FILE="$(mktemp)"
+  if ! curl -x "${PROXY}" -sS -H "Accept: application/vnd.github.v3+json" -o "$TMP_FILE" 'https://api.github.com/repos/v2rayA/dist/tags'; then
+    "rm" "$TMP_FILE"
+    echo 'error: Failed to get release list, please check your network.'
+    exit 1
+  fi
+  RELEASE_LATEST="$(sed 'y/,/\n/' "$TMP_FILE" | grep 'name' | awk -F '"' '{print $4}' | awk 'NR==1{print}')"
+  "rm" "$TMP_FILE"
+  RELEASE_VERSION="v${RELEASE_LATEST#v}"
+  # Compare V2Ray version numbers
+  if [[ "$RELEASE_VERSION" != "$CURRENT_VERSION" ]]; then
+    RELEASE_VERSIONSION_NUMBER="${RELEASE_VERSION#v}"
+    RELEASE_MAJOR_VERSION_NUMBER="${RELEASE_VERSIONSION_NUMBER%%.*}"
+    RELEASE_MINOR_VERSION_NUMBER="$(echo "$RELEASE_VERSIONSION_NUMBER" | awk -F '.' '{print $2}')"
+    RELEASE_MINIMUM_VERSION_NUMBER="${RELEASE_VERSIONSION_NUMBER##*.}"
+    # shellcheck disable=SC2001
+    CURRENT_VERSIONSION_NUMBER="$(echo "${CURRENT_VERSION#v}" | sed 's/-.*//')"
+    CURRENT_MAJOR_VERSION_NUMBER="${CURRENT_VERSIONSION_NUMBER%%.*}"
+    CURRENT_MINOR_VERSION_NUMBER="$(echo "$CURRENT_VERSIONSION_NUMBER" | awk -F '.' '{print $2}')"
+    CURRENT_MINIMUM_VERSION_NUMBER="${CURRENT_VERSIONSION_NUMBER##*.}"
+    if [[ "$RELEASE_MAJOR_VERSION_NUMBER" -gt "$CURRENT_MAJOR_VERSION_NUMBER" ]]; then
+      return 0
+    elif [[ "$RELEASE_MAJOR_VERSION_NUMBER" -eq "$CURRENT_MAJOR_VERSION_NUMBER" ]]; then
+      if [[ "$RELEASE_MINOR_VERSION_NUMBER" -gt "$CURRENT_MINOR_VERSION_NUMBER" ]]; then
         return 0
-    fi
-
-    getPMT
-    if [[ $? -eq 1 ]]; then
-        colorEcho ${RED} "The system package manager tool isn't APT or YUM, please install ${COMPONENT} manually."
-        return 1 
-    fi
-    if [[ $SOFTWARE_UPDATED -eq 0 ]]; then
-        colorEcho ${BLUE} "Updating software repo"
-        $CMD_UPDATE      
-        SOFTWARE_UPDATED=1
-    fi
-
-    colorEcho ${BLUE} "Installing ${COMPONENT}"
-    $CMD_INSTALL $COMPONENT
-    if [[ $? -ne 0 ]]; then
-        colorEcho ${RED} "Failed to install ${COMPONENT}. Please install it manually."
-        return 1
-    fi
-    return 0
-}
-
-# return 1: not apt, yum, or zypper
-getPMT(){
-    if [[ -n `command -v apt-get` ]];then
-        CMD_INSTALL="apt-get -y -qq install"
-        CMD_UPDATE="apt-get -qq update"
-    elif [[ -n `command -v yum` ]]; then
-        CMD_INSTALL="yum -y -q install"
-        CMD_UPDATE="yum -q makecache"
-    elif [[ -n `command -v zypper` ]]; then
-        CMD_INSTALL="zypper -y install"
-        CMD_UPDATE="zypper ref"
-    else
-        return 1
-    fi
-    return 0
-}
-
-extract(){
-    colorEcho ${BLUE}"Extracting V2Ray package to /tmp/v2ray."
-    mkdir -p /tmp/v2ray
-    unzip $1 -d ${VSRC_ROOT}
-    if [[ $? -ne 0 ]]; then
-        colorEcho ${RED} "Failed to extract V2Ray."
-        return 2
-    fi
-    if [[ -d "/tmp/v2ray/v2ray-${NEW_VER}-linux-${VDIS}" ]]; then
-      VSRC_ROOT="/tmp/v2ray/v2ray-${NEW_VER}-linux-${VDIS}"
-    fi
-    return 0
-}
-
-
-# 1: new V2Ray. 0: no. 2: not installed. 3: check failed. 4: don't check.
-getVersion(){
-    if [[ -n "$VERSION" ]]; then
-        NEW_VER="$VERSION"
-        if [[ ${NEW_VER} != v* ]]; then
-          NEW_VER=v${NEW_VER}
-        fi
-        return 4
-    else
-        VER=`/usr/bin/v2ray/v2ray -version 2>/dev/null`
-        RETVAL="$?"
-        CUR_VER=`echo $VER | head -n 1 | cut -d " " -f2`
-        if [[ ${CUR_VER} != v* ]]; then
-            CUR_VER=v${CUR_VER}
-        fi
-        TAG_URL="https://api.github.com/repos/v2ray/v2ray-core/releases/latest"
-        NEW_VER=`curl ${PROXY} -s ${TAG_URL} --connect-timeout 10| grep 'tag_name' | cut -d\" -f4`
-        if [[ ${NEW_VER} != v* ]]; then
-          NEW_VER=v${NEW_VER}
-        fi
-        if [[ $? -ne 0 ]] || [[ $NEW_VER == "" ]]; then
-            colorEcho ${RED} "Failed to fetch release information. Please check your network or try again."
-            return 3
-        elif [[ $RETVAL -ne 0 ]];then
-            return 2
-        elif [[ $NEW_VER != $CUR_VER ]];then
-            return 1
-        fi
-        return 0
-    fi
-}
-
-stopV2ray(){
-    colorEcho ${BLUE} "Shutting down V2Ray service."
-    if [[ -n "${SYSTEMCTL_CMD}" ]] || [[ -f "/lib/systemd/system/v2ray.service" ]] || [[ -f "/etc/systemd/system/v2ray.service" ]]; then
-        ${SYSTEMCTL_CMD} stop v2ray
-    elif [[ -n "${SERVICE_CMD}" ]] || [[ -f "/etc/init.d/v2ray" ]]; then
-        ${SERVICE_CMD} v2ray stop
-    fi
-    if [[ $? -ne 0 ]]; then
-        colorEcho ${YELLOW} "Failed to shutdown V2Ray service."
-        return 2
-    fi
-    return 0
-}
-
-startV2ray(){
-    if [ -n "${SYSTEMCTL_CMD}" ] && [ -f "/lib/systemd/system/v2ray.service" ]; then
-        ${SYSTEMCTL_CMD} start v2ray
-    elif [ -n "${SYSTEMCTL_CMD}" ] && [ -f "/etc/systemd/system/v2ray.service" ]; then
-        ${SYSTEMCTL_CMD} start v2ray
-    elif [ -n "${SERVICE_CMD}" ] && [ -f "/etc/init.d/v2ray" ]; then
-        ${SERVICE_CMD} v2ray start
-    fi
-    if [[ $? -ne 0 ]]; then
-        colorEcho ${YELLOW} "Failed to start V2Ray service."
-        return 2
-    fi
-    return 0
-}
-
-copyFile() {
-    NAME=$1
-    ERROR=`cp "${VSRC_ROOT}/${NAME}" "/usr/bin/v2ray/${NAME}" 2>&1`
-    if [[ $? -ne 0 ]]; then
-        colorEcho ${YELLOW} "${ERROR}"
-        return 1
-    fi
-    return 0
-}
-
-makeExecutable() {
-    chmod +x "/usr/bin/v2ray/$1"
-}
-
-installV2Ray(){
-    # Install V2Ray binary to /usr/bin/v2ray
-    mkdir -p /usr/bin/v2ray
-    copyFile v2ray
-    if [[ $? -ne 0 ]]; then
-        colorEcho ${RED} "Failed to copy V2Ray binary and resources."
-        return 1
-    fi
-    makeExecutable v2ray
-    copyFile v2ctl && makeExecutable v2ctl
-    copyFile geoip.dat
-    copyFile geosite.dat
-
-    # Install V2Ray server config to /etc/v2ray
-    if [[ ! -f "/etc/v2ray/config.json" ]]; then
-        mkdir -p /etc/v2ray
-        mkdir -p /var/log/v2ray
-        cp "${VSRC_ROOT}/vpoint_vmess_freedom.json" "/etc/v2ray/config.json"
-        if [[ $? -ne 0 ]]; then
-            colorEcho ${YELLOW} "Failed to create V2Ray configuration file. Please create it manually."
-            return 1
-        fi
-        let PORT=$RANDOM+10000
-        UUID=$(cat /proc/sys/kernel/random/uuid)
-
-        sed -i "s/10086/${PORT}/g" "/etc/v2ray/config.json"
-        sed -i "s/23ad6b10-8d1a-40f7-8ad0-e3e35cd38297/${UUID}/g" "/etc/v2ray/config.json"
-
-        colorEcho ${BLUE} "PORT:${PORT}"
-        colorEcho ${BLUE} "UUID:${UUID}"
-    fi
-    return 0
-}
-
-
-installInitScript(){
-    if [[ -n "${SYSTEMCTL_CMD}" ]];then
-        if [[ ! -f "/etc/systemd/system/v2ray.service" ]]; then
-            if [[ ! -f "/lib/systemd/system/v2ray.service" ]]; then
-                cp "${VSRC_ROOT}/systemd/v2ray.service" "/etc/systemd/system/"
-                systemctl enable v2ray.service
-            fi
-        fi
-        return
-    elif [[ -n "${SERVICE_CMD}" ]] && [[ ! -f "/etc/init.d/v2ray" ]]; then
-        installSoftware "daemon" || return $?
-        cp "${VSRC_ROOT}/systemv/v2ray" "/etc/init.d/v2ray"
-        chmod +x "/etc/init.d/v2ray"
-        update-rc.d v2ray defaults
-    fi
-    return
-}
-
-Help(){
-    echo "./install-release.sh [-h] [-c] [--remove] [-p proxy] [-f] [--version vx.y.z] [-l file]"
-    echo "  -h, --help            Show help"
-    echo "  -p, --proxy           To download through a proxy server, use -p socks5://127.0.0.1:1080 or -p http://127.0.0.1:3128 etc"
-    echo "  -f, --force           Force install"
-    echo "      --version         Install a particular version, use --version v3.15"
-    echo "  -l, --local           Install from a local file"
-    echo "      --remove          Remove installed V2Ray"
-    echo "  -c, --check           Check for update"
-    return 0
-}
-
-remove(){
-    if [[ -n "${SYSTEMCTL_CMD}" ]] && [[ -f "/etc/systemd/system/v2ray.service" ]];then
-        if pgrep "v2ray" > /dev/null ; then
-            stopV2ray
-        fi
-        systemctl disable v2ray.service
-        rm -rf "/usr/bin/v2ray" "/etc/systemd/system/v2ray.service"
-        if [[ $? -ne 0 ]]; then
-            colorEcho ${RED} "Failed to remove V2Ray."
-            return 0
+      elif [[ "$RELEASE_MINOR_VERSION_NUMBER" -eq "$CURRENT_MINOR_VERSION_NUMBER" ]]; then
+        if [[ "$RELEASE_MINIMUM_VERSION_NUMBER" -gt "$CURRENT_MINIMUM_VERSION_NUMBER" ]]; then
+          return 0
         else
-            colorEcho ${GREEN} "Removed V2Ray successfully."
-            colorEcho ${BLUE} "If necessary, please remove configuration file and log file manually."
-            return 0
+          return 1
         fi
-    elif [[ -n "${SYSTEMCTL_CMD}" ]] && [[ -f "/lib/systemd/system/v2ray.service" ]];then
-        if pgrep "v2ray" > /dev/null ; then
-            stopV2ray
-        fi
-        systemctl disable v2ray.service
-        rm -rf "/usr/bin/v2ray" "/lib/systemd/system/v2ray.service"
-        if [[ $? -ne 0 ]]; then
-            colorEcho ${RED} "Failed to remove V2Ray."
-            return 0
-        else
-            colorEcho ${GREEN} "Removed V2Ray successfully."
-            colorEcho ${BLUE} "If necessary, please remove configuration file and log file manually."
-            return 0
-        fi
-    elif [[ -n "${SERVICE_CMD}" ]] && [[ -f "/etc/init.d/v2ray" ]]; then
-        if pgrep "v2ray" > /dev/null ; then
-            stopV2ray
-        fi
-        rm -rf "/usr/bin/v2ray" "/etc/init.d/v2ray"
-        if [[ $? -ne 0 ]]; then
-            colorEcho ${RED} "Failed to remove V2Ray."
-            return 0
-        else
-            colorEcho ${GREEN} "Removed V2Ray successfully."
-            colorEcho ${BLUE} "If necessary, please remove configuration file and log file manually."
-            return 0
-        fi       
+      else
+        return 1
+      fi
     else
-        colorEcho ${YELLOW} "V2Ray not found."
-        return 0
+      return 1
     fi
+  elif [[ "$RELEASE_VERSION" == "$CURRENT_VERSION" ]]; then
+    return 1
+  fi
 }
 
-checkUpdate(){
-    echo "Checking for update."
-    VERSION=""
-    getVersion
-    RETVAL="$?"
-    if [[ $RETVAL -eq 1 ]]; then
-        colorEcho ${BLUE} "Found new version ${NEW_VER} for V2Ray.(Current version:$CUR_VER)"
-    elif [[ $RETVAL -eq 0 ]]; then
-        colorEcho ${BLUE} "No new version. Current version is ${NEW_VER}."
-    elif [[ $RETVAL -eq 2 ]]; then
-        colorEcho ${YELLOW} "No V2Ray installed."
-        colorEcho ${BLUE} "The newest version for V2Ray is ${NEW_VER}."
+download_v2ray() {
+  DOWNLOAD_LINK="https://cdn.jsdelivr.net/gh/v2rayA/dist@$RELEASE_VERSION/v2ray-linux-$MACHINE.zip"
+  echo "Downloading V2Ray archive: $DOWNLOAD_LINK"
+  if ! curl -x "${PROXY}" -R -H 'Cache-Control: no-cache' -o "$ZIP_FILE" "$DOWNLOAD_LINK"; then
+    echo 'error: Download failed! Please check your network or try again.'
+    return 1
+  fi
+  echo "Downloading verification file for V2Ray archive: $DOWNLOAD_LINK.dgst"
+  if ! curl -x "${PROXY}" -sSR -H 'Cache-Control: no-cache' -o "$ZIP_FILE.dgst" "$DOWNLOAD_LINK.dgst"; then
+    echo 'error: Download failed! Please check your network or try again.'
+    return 1
+  fi
+  if [[ "$(cat "$ZIP_FILE".dgst)" == 'Not Found' ]]; then
+    echo 'error: This version does not support verification. Please replace with another version.'
+    return 1
+  fi
+
+  # Verification of V2Ray archive
+  for LISTSUM in 'md5' 'sha1' 'sha256' 'sha512'; do
+    SUM="$(${LISTSUM}sum "$ZIP_FILE" | sed 's/ .*//')"
+    CHECKSUM="$(grep ${LISTSUM^^} "$ZIP_FILE".dgst | grep "$SUM" -o -a | uniq)"
+    if [[ "$SUM" != "$CHECKSUM" ]]; then
+      echo 'error: Check failed! Please check your network or try again.'
+      return 1
     fi
-    return 0
+  done
 }
 
-main(){
-    #helping information
-    [[ "$HELP" == "1" ]] && Help && return
-    [[ "$CHECK" == "1" ]] && checkUpdate && return
-    [[ "$REMOVE" == "1" ]] && remove && return
-    
-    sysArch
-    # extract local file
-    if [[ $LOCAL_INSTALL -eq 1 ]]; then
-        colorEcho ${YELLOW} "Installing V2Ray via local file. Please make sure the file is a valid V2Ray package, as we are not able to determine that."
-        NEW_VER=local
-        installSoftware unzip || return $?
-        rm -rf /tmp/v2ray
-        extract $LOCAL || return $?
-        #FILEVDIS=`ls /tmp/v2ray |grep v2ray-v |cut -d "-" -f4`
-        #SYSTEM=`ls /tmp/v2ray |grep v2ray-v |cut -d "-" -f3`
-        #if [[ ${SYSTEM} != "linux" ]]; then
-        #    colorEcho ${RED} "The local V2Ray can not be installed in linux."
-        #    return 1
-        #elif [[ ${FILEVDIS} != ${VDIS} ]]; then
-        #    colorEcho ${RED} "The local V2Ray can not be installed in ${ARCH} system."
-        #    return 1
-        #else
-        #    NEW_VER=`ls /tmp/v2ray |grep v2ray-v |cut -d "-" -f2`
-        #fi
+decompression() {
+  if ! unzip -q "$1" -d "$TMP_DIRECTORY"; then
+    echo 'error: V2Ray decompression failed.'
+    "rm" -r "$TMP_DIRECTORY"
+    echo "removed: $TMP_DIRECTORY"
+    exit 1
+  fi
+  echo "info: Extract the V2Ray package to $TMP_DIRECTORY and prepare it for installation."
+}
+
+install_file() {
+  NAME="$1"
+  if [[ "$NAME" == 'v2ray' ]] || [[ "$NAME" == 'v2ctl' ]]; then
+    install -m 755 "${TMP_DIRECTORY}/$NAME" "/usr/local/bin/$NAME"
+  elif [[ "$NAME" == 'geoip.dat' ]] || [[ "$NAME" == 'geosite.dat' ]]; then
+    install -m 644 "${TMP_DIRECTORY}/$NAME" "${DAT_PATH}/$NAME"
+  fi
+}
+
+install_v2ray() {
+  # Install V2Ray binary to /usr/local/bin/ and $DAT_PATH
+  install_file v2ray
+  install_file v2ctl
+  install -d "$DAT_PATH"
+  # If the file exists, geoip.dat and geosite.dat will not be installed or updated
+  if [[ ! -f "${DAT_PATH}/.undat" ]]; then
+    install_file geoip.dat
+    install_file geosite.dat
+  fi
+
+  # Install V2Ray configuration file to $JSON_PATH
+  # shellcheck disable=SC2153
+  if [[ -z "$JSONS_PATH" ]] && [[ ! -d "$JSON_PATH" ]]; then
+    install -d "$JSON_PATH"
+    echo "{}" > "${JSON_PATH}/config.json"
+    CONFIG_NEW='1'
+  fi
+
+  # Install V2Ray configuration file to $JSONS_PATH
+  if [[ -n "$JSONS_PATH" ]] && [[ ! -d "$JSONS_PATH" ]]; then
+    install -d "$JSONS_PATH"
+    for BASE in 00_log 01_api 02_dns 03_routing 04_policy 05_inbounds 06_outbounds 07_transport 08_stats 09_reverse; do
+      echo '{}' > "${JSONS_PATH}/${BASE}.json"
+    done
+    CONFDIR='1'
+  fi
+
+  # Used to store V2Ray log files
+  if [[ ! -d '/var/log/v2ray/' ]]; then
+    if id nobody | grep -qw 'nogroup'; then
+      install -d -m 700 -o nobody -g nogroup /var/log/v2ray/
+      install -m 600 -o nobody -g nogroup /dev/null /var/log/v2ray/access.log
+      install -m 600 -o nobody -g nogroup /dev/null /var/log/v2ray/error.log
     else
-        # download via network and extract
-        installSoftware "curl" || return $?
-        getVersion
-        RETVAL="$?"
-        if [[ $RETVAL == 0 ]] && [[ "$FORCE" != "1" ]]; then
-            colorEcho ${BLUE} "Latest version ${CUR_VER} is already installed."
-            if [[ "${ERROR_IF_UPTODATE}" == "1" ]]; then
-              return 10
-            fi
-            return
-        elif [[ $RETVAL == 3 ]]; then
-            return 3
-        else
-            colorEcho ${BLUE} "Installing V2Ray ${NEW_VER} on ${ARCH}"
-            downloadV2Ray || return $?
-            installSoftware unzip || return $?
-            extract ${ZIPFILE} || return $?
-        fi
-    fi 
-    
-    if [[ "${EXTRACT_ONLY}" == "1" ]]; then
-        colorEcho ${GREEN} "V2Ray extracted to ${VSRC_ROOT}, and exiting..."
-        return 0
+      install -d -m 700 -o nobody -g nobody /var/log/v2ray/
+      install -m 600 -o nobody -g nobody /dev/null /var/log/v2ray/access.log
+      install -m 600 -o nobody -g nobody /dev/null /var/log/v2ray/error.log
     fi
-
-    if pgrep "v2ray" > /dev/null ; then
-        V2RAY_RUNNING=1
-        stopV2ray
-    fi
-    installV2Ray || return $?
-    installInitScript || return $?
-    if [[ ${V2RAY_RUNNING} -eq 1 ]];then
-        colorEcho ${BLUE} "Restarting V2Ray service."
-        startV2ray
-    fi
-    colorEcho ${GREEN} "V2Ray ${NEW_VER} is installed."
-    rm -rf /tmp/v2ray
-    return 0
+    LOG='1'
+  fi
 }
 
-main
+install_startup_service_file() {
+  install -m 644 "${TMP_DIRECTORY}/systemd/system/v2ray.service" /etc/systemd/system/v2ray.service
+  install -m 644 "${TMP_DIRECTORY}/systemd/system/v2ray@.service" /etc/systemd/system/v2ray@.service
+  mkdir -p '/etc/systemd/system/v2ray.service.d'
+  mkdir -p '/etc/systemd/system/v2ray@.service.d/'
+  if [[ -n "$JSONS_PATH" ]]; then
+    "rm" '/etc/systemd/system/v2ray.service.d/10-donot_touch_single_conf.conf' \
+      '/etc/systemd/system/v2ray@.service.d/10-donot_touch_single_conf.conf'
+    echo "# In case you have a good reason to do so, duplicate this file in the same directory and make your customizes there.
+# Or all changes you made will be lost!  # Refer: https://www.freedesktop.org/software/systemd/man/systemd.unit.html
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/v2ray -confdir $JSONS_PATH" |
+      tee '/etc/systemd/system/v2ray.service.d/10-donot_touch_multi_conf.conf' > \
+        '/etc/systemd/system/v2ray@.service.d/10-donot_touch_multi_conf.conf'
+  else
+    "rm" '/etc/systemd/system/v2ray.service.d/10-donot_touch_multi_conf.conf' \
+      '/etc/systemd/system/v2ray@.service.d/10-donot_touch_multi_conf.conf'
+    echo "# In case you have a good reason to do so, duplicate this file in the same directory and make your customizes there.
+# Or all changes you made will be lost!  # Refer: https://www.freedesktop.org/software/systemd/man/systemd.unit.html
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/v2ray -config ${JSON_PATH}/config.json" > \
+      '/etc/systemd/system/v2ray.service.d/10-donot_touch_single_conf.conf'
+    echo "# In case you have a good reason to do so, duplicate this file in the same directory and make your customizes there.
+# Or all changes you made will be lost!  # Refer: https://www.freedesktop.org/software/systemd/man/systemd.unit.html
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/v2ray -config ${JSON_PATH}/%i.json" > \
+      '/etc/systemd/system/v2ray@.service.d/10-donot_touch_single_conf.conf'
+  fi
+  echo "info: Systemd service files have been installed successfully!"
+  echo "${red}warning: ${green}The following are the actual parameters for the v2ray service startup."
+  echo "${red}warning: ${green}Please make sure the configuration file path is correctly set.${reset}"
+  systemd_cat_config /etc/systemd/system/v2ray.service
+  # shellcheck disable=SC2154
+  if [[ x"${check_all_service_files:0:1}" = x'y' ]]; then
+    echo
+    echo
+    systemd_cat_config /etc/systemd/system/v2ray@.service
+  fi
+  systemctl daemon-reload
+  SYSTEMD='1'
+}
+
+start_v2ray() {
+  if [[ -f '/etc/systemd/system/v2ray.service' ]]; then
+    if systemctl start "${V2RAY_CUSTOMIZE:-v2ray}"; then
+      echo 'info: Start the V2Ray service.'
+    else
+      echo 'error: Failed to start V2Ray service.'
+      exit 1
+    fi
+  fi
+}
+
+stop_v2ray() {
+  V2RAY_CUSTOMIZE="$(systemctl list-units | grep 'v2ray@' | awk -F ' ' '{print $1}')"
+  if [[ -z "$V2RAY_CUSTOMIZE" ]]; then
+    local v2ray_daemon_to_stop='v2ray.service'
+  else
+    local v2ray_daemon_to_stop="$V2RAY_CUSTOMIZE"
+  fi
+  if ! systemctl stop "$v2ray_daemon_to_stop"; then
+    echo 'error: Stopping the V2Ray service failed.'
+    exit 1
+  fi
+  echo 'info: Stop the V2Ray service.'
+}
+
+check_update() {
+  if [[ -f '/etc/systemd/system/v2ray.service' ]]; then
+    (get_version)
+    local get_ver_exit_code=$?
+    if [[ "$get_ver_exit_code" -eq '0' ]]; then
+      echo "info: Found the latest release of V2Ray $RELEASE_VERSION . (Current release: $CURRENT_VERSION)"
+    elif [[ "$get_ver_exit_code" -eq '1' ]]; then
+      echo "info: No new version. The current version of V2Ray is $CURRENT_VERSION ."
+    fi
+    exit 0
+  else
+    echo 'error: V2Ray is not installed.'
+    exit 1
+  fi
+}
+
+remove_v2ray() {
+  if systemctl list-unit-files | grep -qw 'v2ray'; then
+    if [[ -n "$(pidof v2ray)" ]]; then
+      stop_v2ray
+    fi
+    if ! ("rm" -r '/usr/local/bin/v2ray' \
+      '/usr/local/bin/v2ctl' \
+      "$DAT_PATH" \
+      '/etc/systemd/system/v2ray.service' \
+      '/etc/systemd/system/v2ray@.service' \
+      '/etc/systemd/system/v2ray.service.d' \
+      '/etc/systemd/system/v2ray@.service.d'); then
+      echo 'error: Failed to remove V2Ray.'
+      exit 1
+    else
+      echo 'removed: /usr/local/bin/v2ray'
+      echo 'removed: /usr/local/bin/v2ctl'
+      echo "removed: $DAT_PATH"
+      echo 'removed: /etc/systemd/system/v2ray.service'
+      echo 'removed: /etc/systemd/system/v2ray@.service'
+      echo 'removed: /etc/systemd/system/v2ray.service.d'
+      echo 'removed: /etc/systemd/system/v2ray@.service.d'
+      echo 'Please execute the command: systemctl disable v2ray'
+      echo "You may need to execute a command to remove dependent software: $PACKAGE_MANAGEMENT_REMOVE curl unzip"
+      echo 'info: V2Ray has been removed.'
+      echo 'info: If necessary, manually delete the configuration and log files.'
+      if [[ -n "$JSONS_PATH" ]]; then
+        echo "info: e.g., $JSONS_PATH and /var/log/v2ray/ ..."
+      else
+        echo "info: e.g., $JSON_PATH and /var/log/v2ray/ ..."
+      fi
+      exit 0
+    fi
+  else
+    echo 'error: V2Ray is not installed.'
+    exit 1
+  fi
+}
+
+# Explanation of parameters in the script
+show_help() {
+  echo "usage: $0 [--remove | --version number | -c | -f | -h | -l | -p]"
+  echo '  [-p address] [--version number | -c | -f]'
+  echo '  --remove        Remove V2Ray'
+  echo '  --version       Install the specified version of V2Ray, e.g., --version v4.18.0'
+  echo '  -c, --check     Check if V2Ray can be updated'
+  echo '  -f, --force     Force installation of the latest version of V2Ray'
+  echo '  -h, --help      Show help'
+  echo '  -l, --local     Install V2Ray from a local file'
+  echo '  -p, --proxy     Download through a proxy server, e.g., -p http://127.0.0.1:8118 or -p socks5://127.0.0.1:1080'
+  exit 0
+}
+
+main() {
+  check_if_running_as_root
+  identify_the_operating_system_and_architecture
+  judgment_parameters "$@"
+
+  install_software "$package_provide_tput" 'tput'
+  red=$(tput setaf 1)
+  green=$(tput setaf 2)
+  aoi=$(tput setaf 6)
+  reset=$(tput sgr0)
+
+  # Parameter information
+  [[ "$HELP" -eq '1' ]] && show_help
+  [[ "$CHECK" -eq '1' ]] && check_update
+  [[ "$REMOVE" -eq '1' ]] && remove_v2ray
+
+  # Two very important variables
+  TMP_DIRECTORY="$(mktemp -d)"
+  ZIP_FILE="${TMP_DIRECTORY}/v2ray-linux-$MACHINE.zip"
+
+  # Install V2Ray from a local file, but still need to make sure the network is available
+  if [[ "$LOCAL_INSTALL" -eq '1' ]]; then
+    echo 'warn: Install V2Ray from a local file, but still need to make sure the network is available.'
+    echo -n 'warn: Please make sure the file is valid because we cannot confirm it. (Press any key) ...'
+    read -r
+    install_software 'unzip' 'unzip'
+    decompression "$LOCAL_FILE"
+  else
+    # Normal way
+    install_software 'curl' 'curl'
+    get_version
+    NUMBER="$?"
+    if [[ "$NUMBER" -eq '0' ]] || [[ "$FORCE" -eq '1' ]] || [[ "$NUMBER" -eq 2 ]]; then
+      echo "info: Installing V2Ray $RELEASE_VERSION for $(uname -m)"
+      download_v2ray
+      if [[ "$?" -eq '1' ]]; then
+        "rm" -r "$TMP_DIRECTORY"
+        echo "removed: $TMP_DIRECTORY"
+        exit 0
+      fi
+      install_software 'unzip' 'unzip'
+      decompression "$ZIP_FILE"
+    elif [[ "$NUMBER" -eq '1' ]]; then
+      echo "info: No new version. The current version of V2Ray is $CURRENT_VERSION ."
+      exit 0
+    fi
+  fi
+
+  # Determine if V2Ray is running
+  if systemctl list-unit-files | grep -qw 'v2ray'; then
+    if [[ -n "$(pidof v2ray)" ]]; then
+      stop_v2ray
+      V2RAY_RUNNING='1'
+    fi
+  fi
+  install_v2ray
+  install_startup_service_file
+  echo 'installed: /usr/local/bin/v2ray'
+  echo 'installed: /usr/local/bin/v2ctl'
+  # If the file exists, the content output of installing or updating geoip.dat and geosite.dat will not be displayed
+  if [[ ! -f "${DAT_PATH}/.undat" ]]; then
+    echo "installed: ${DAT_PATH}/geoip.dat"
+    echo "installed: ${DAT_PATH}/geosite.dat"
+  fi
+  if [[ "$CONFIG_NEW" -eq '1' ]]; then
+    echo "installed: ${JSON_PATH}/config.json"
+  fi
+  if [[ "$CONFDIR" -eq '1' ]]; then
+    echo "installed: ${JSON_PATH}/00_log.json"
+    echo "installed: ${JSON_PATH}/01_api.json"
+    echo "installed: ${JSON_PATH}/02_dns.json"
+    echo "installed: ${JSON_PATH}/03_routing.json"
+    echo "installed: ${JSON_PATH}/04_policy.json"
+    echo "installed: ${JSON_PATH}/05_inbounds.json"
+    echo "installed: ${JSON_PATH}/06_outbounds.json"
+    echo "installed: ${JSON_PATH}/07_transport.json"
+    echo "installed: ${JSON_PATH}/08_stats.json"
+    echo "installed: ${JSON_PATH}/09_reverse.json"
+  fi
+  if [[ "$LOG" -eq '1' ]]; then
+    echo 'installed: /var/log/v2ray/'
+    echo 'installed: /var/log/v2ray/access.log'
+    echo 'installed: /var/log/v2ray/error.log'
+  fi
+  if [[ "$SYSTEMD" -eq '1' ]]; then
+    echo 'installed: /etc/systemd/system/v2ray.service'
+    echo 'installed: /etc/systemd/system/v2ray@.service'
+  fi
+  "rm" -r "$TMP_DIRECTORY"
+  echo "removed: $TMP_DIRECTORY"
+  if [[ "$LOCAL_INSTALL" -eq '1' ]]; then
+    get_version
+  fi
+  echo "info: V2Ray $RELEASE_VERSION is installed."
+  echo "You may need to execute a command to remove dependent software: $PACKAGE_MANAGEMENT_REMOVE curl unzip"
+  if [[ "$V2RAY_RUNNING" -eq '1' ]]; then
+    start_v2ray
+  else
+    echo 'Please execute the command: systemctl enable v2ray; systemctl start v2ray'
+  fi
+}
+
+main "$@"

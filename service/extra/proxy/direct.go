@@ -1,10 +1,10 @@
 package proxy
 
 import (
-	"errors"
 	"log"
 	"net"
 	"syscall"
+	"github.com/v2rayA/v2rayA/global"
 )
 
 // Direct proxy
@@ -29,7 +29,7 @@ func NewDirect(intface string) (*Direct, error) {
 
 	iface, err := net.InterfaceByName(intface)
 	if err != nil {
-		return nil, errors.New(err.Error() + ": " + intface)
+		return nil, newError(intface).Base(err)
 	}
 
 	return &Direct{iface: iface}, nil
@@ -57,7 +57,7 @@ func (d *Direct) Dial(network, addr string) (c net.Conn, err error) {
 
 	// no ip available (so no dials made), maybe the interface link is down
 	if c == nil && err == nil {
-		err = errors.New("dial failed, maybe the interface link is down, please check it")
+		err = newError("dial failed, maybe the interface link is down, please check it")
 	}
 
 	return c, err
@@ -83,7 +83,9 @@ func dial(network, addr string, localIP net.IP) (net.Conn, error) {
 				//TODO: force to set 0xff. any chances to customize this value?
 				err := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_MARK, 0xff)
 				if err != nil {
-					log.Printf("control: %s", err)
+					if global.IsDebug() {
+						log.Printf("control: %s", err)
+					}
 					return
 				}
 			})
